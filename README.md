@@ -4,11 +4,18 @@ Falcomm is a 5G/AI-RAN experimental platform based on the NVIDIA DGX Spark. The 
 
 ## Target Architecture
 
-```text
-USRP B210 #1 ─ DU1 ─┐
-                     ├─ OCUDU CU ─ Open5GS 5GC ─ MPTCP Server
-USRP B210 #2 ─ DU2 ─┘       │
-                             └─ FlexRIC ─ xApp ─ AI Policy Controller
+```mermaid
+flowchart LR
+    B1[USRP B210 #1] --> DU1[OCUDU DU1]
+    B2[USRP B210 #2] --> DU2[OCUDU DU2]
+    DU1 -->|F1| CU[OCUDU CU]
+    DU2 -->|F1| CU
+    DU1 -->|E2| RIC[FlexRIC Near-RT RIC]
+    DU2 -->|E2| RIC
+    CU -->|N2/N3| Core[Open5GS 5GC]
+    Core -->|N6| Server[MPTCP Server]
+    RIC --> xApp[xApp]
+    xApp --> AI[AI Policy Controller]
 ```
 
 The intended control loop uses E2 measurements from the DUs at FlexRIC. An xApp and AI controller then adjust Linux MPTCP path selection or scheduling policies.
