@@ -1,9 +1,9 @@
-# 2. 操作指令手册
+# 2. Operational Command Reference
 # DGX Spark + Open5GS + OCUDU CU/DU + B210
 
 ---
 
-# 一、重要路径
+# I. Key Paths
 
 ```text
 OCUDU repo:
@@ -30,27 +30,27 @@ MongoDB Docker:
 
 ---
 
-# 二、正常启动顺序
+# II. Standard Startup Sequence
 
 ```text
 1 MongoDB
 2 Open5GS
 3 OCUDU CU
-4 检查 B210
+4. Verify B210 availability
 5 OCUDU DU
-6 验证 N2 / F1 / UHD
+6. Verify N2, F1, and UHD
 7 UE
 ```
 
 ---
 
-# 三、启动 MongoDB
+# III. Start MongoDB
 
 ```bash
 sudo docker start open5gs-mongo
 ```
 
-检查：
+Check status:
 
 ```bash
 sudo docker ps --filter name=open5gs-mongo
@@ -63,13 +63,13 @@ sudo docker exec open5gs-mongo \
   mongosh --quiet --eval 'db.adminCommand({ping: 1})'
 ```
 
-预期：
+Expected result:
 
 ```text
 { ok: 1 }
 ```
 
-日志：
+View logs:
 
 ```bash
 sudo docker logs --tail 50 open5gs-mongo
@@ -77,15 +77,15 @@ sudo docker logs --tail 50 open5gs-mongo
 
 ---
 
-# 四、启动 Open5GS
+# IV. Start Open5GS
 
-简单方式：
+Recommended command:
 
 ```bash
 sudo systemctl start 'open5gs-*'
 ```
 
-如果 shell 不接受 glob，则使用：
+If the shell does not expand the service-name glob, use:
 
 ```bash
 sudo systemctl start \
@@ -102,7 +102,7 @@ sudo systemctl start \
   open5gs-amfd
 ```
 
-查看：
+Inspect service status:
 
 ```bash
 systemctl --no-pager --full list-units 'open5gs-*' \
@@ -117,20 +117,20 @@ systemctl --no-pager --full status open5gs-amfd
 
 ---
 
-# 五、检查 AMF N2
+# V. Verify AMF N2
 
 ```bash
 sudo ss -lnp | grep 38412
 ```
 
-应看到：
+Expected output:
 
 ```text
 127.0.0.5:38412
 open5gs-amfd
 ```
 
-也可：
+Alternatively:
 
 ```bash
 sudo ss -lnpA sctp
@@ -138,7 +138,7 @@ sudo ss -lnpA sctp
 
 ---
 
-# 六、启动 OCUDU CU
+# VI. Start the OCUDU CU
 
 Terminal 1：
 
@@ -149,7 +149,7 @@ build/apps/cu/ocu \
   -c configs/cu.yml
 ```
 
-预期：
+Expected output:
 
 ```text
 N2: Connection to AMF on 127.0.0.5:38412 completed
@@ -159,14 +159,14 @@ F1-C: Listening for new connections on bind addresses 127.0.10.1, port 38472...
 
 ---
 
-# 七、确认 AMF 接收到 CU
+# VII. Confirm CU Registration at the AMF
 
 ```bash
 journalctl -u open5gs-amfd -n 50 --no-pager | \
 grep -Ei 'gNB|NGAP|NG Setup|SCTP|accepted'
 ```
 
-预期：
+Expected output:
 
 ```text
 gNB-N2 accepted
@@ -175,13 +175,13 @@ Number of gNBs is now 1
 
 ---
 
-# 八、检查 B210
+# VIII. Verify B210
 
 ```bash
 uhd_find_devices
 ```
 
-预期：
+Expected device information:
 
 ```text
 serial: 3271233
@@ -189,7 +189,7 @@ product: B210
 type: b200
 ```
 
-完整 probe：
+Run a full device probe:
 
 ```bash
 uhd_usrp_probe --args="type=b200,serial=3271233"
@@ -201,7 +201,7 @@ USB：
 lsusb -t
 ```
 
-加载 firmware 后应工作在：
+After firmware loading, the device should operate at:
 
 ```text
 5000M
@@ -209,11 +209,11 @@ lsusb -t
 
 ---
 
-# 九、启动 DU1
+# IX. Start DU1
 
-注意：
+RF note:
 
-当前会在 ~3.75 GHz 发射 RF。
+The current configuration transmits RF at approximately 3.75 GHz.
 
 Terminal 2：
 
@@ -224,7 +224,7 @@ build/apps/du_split_8/odu \
   -c configs/du1_b210_n78_20mhz.yml
 ```
 
-预期：
+Expected output:
 
 ```text
 Detected Device: B210
@@ -243,13 +243,13 @@ F1-C: Connection to CU-CP on 127.0.10.1:38472 completed
 
 ---
 
-# 十、验证 F1
+# X. Verify F1
 
 ```bash
 sudo ss -anp | grep 38472
 ```
 
-应看到：
+Expected state:
 
 ```text
 127.0.10.1:38472
@@ -259,14 +259,14 @@ sudo ss -anp | grep 38472
 
 ---
 
-# 十一、检查 CU/DU 错误
+# XI. Inspect CU/DU Errors
 
 ```bash
 grep -Ei 'F1|error|warning|late|underflow|overflow|radio|UHD' \
   /tmp/cu.log /tmp/du.log | tail -80
 ```
 
-查看尾部：
+Inspect the most recent log entries:
 
 ```bash
 tail -30 /tmp/cu.log
@@ -275,9 +275,9 @@ tail -30 /tmp/du.log
 
 ---
 
-# 十二、停止实验
+# XII. Stop the Experiment
 
-顺序：
+Shutdown sequence:
 
 ```text
 DU
@@ -301,13 +301,13 @@ CU terminal：
 Ctrl+C
 ```
 
-停止 Open5GS：
+Stop Open5GS:
 
 ```bash
 sudo systemctl stop 'open5gs-*'
 ```
 
-如果 glob 不工作：
+If the service-name glob is not expanded:
 
 ```bash
 sudo systemctl stop \
@@ -324,17 +324,17 @@ sudo systemctl stop \
   open5gs-nrfd
 ```
 
-停止 MongoDB：
+Stop MongoDB:
 
 ```bash
 sudo docker stop open5gs-mongo
 ```
 
-Docker daemon 不用关。
+The Docker daemon does not need to be stopped.
 
 ---
 
-# 十三、确认暂停状态
+# XIII. Confirm the Paused State
 
 Open5GS：
 
@@ -349,7 +349,7 @@ MongoDB container：
 sudo docker ps --filter name=open5gs-mongo
 ```
 
-容器仍存在：
+Confirm that the container still exists:
 
 ```bash
 sudo docker ps -a --filter name=open5gs-mongo
@@ -361,7 +361,7 @@ Docker：
 systemctl is-active docker
 ```
 
-应为：
+Expected state:
 
 ```text
 active
@@ -369,36 +369,36 @@ active
 
 ---
 
-# 十四、原生 MongoDB 8
+# XIV. Native MongoDB 8
 
-不要使用：
+Do not run:
 
 ```bash
 sudo systemctl start mongod
 ```
 
-应保持：
+The service should remain:
 
 ```bash
 systemctl is-enabled mongod
 systemctl is-active mongod
 ```
 
-理想：
+Expected status:
 
 ```text
 disabled
 inactive
 ```
 
-如果显示：
+If the service reports:
 
 ```text
 disabled
 failed
 ```
 
-清状态：
+Clear the failed state:
 
 ```bash
 sudo systemctl reset-failed mongod
@@ -406,7 +406,7 @@ sudo systemctl reset-failed mongod
 
 ---
 
-# 十五、Dry-run
+# XV. Dry-Run Validation
 
 CU：
 
@@ -430,7 +430,7 @@ build/apps/du_split_8/odu \
 
 ---
 
-# 十六、Rebuild
+# XVI. Rebuild
 
 CU：
 
@@ -454,9 +454,9 @@ cmake --build build \
 
 ---
 
-# 十七、UHD Benchmark
+# XVII. UHD Benchmark
 
-不要在 DU 正在占用 B210 时运行。
+Do not run this command while the DU is using the B210.
 
 ```bash
 /usr/libexec/uhd/examples/benchmark_rate \
@@ -467,41 +467,41 @@ cmake --build build \
 
 ---
 
-# 十八、修改 TX/RX Gain
+# XVIII. Modify TX/RX Gain
 
-当前：
+Current values:
 
 ```yaml
 tx_gain: 20
 rx_gain: 40
 ```
 
-检查：
+Check the configuration:
 
 ```bash
 grep -nE 'tx_gain|rx_gain' \
   ~/ocudu/configs/du1_b210_n78_20mhz.yml
 ```
 
-修改 TX gain 示例：
+Example: modify the TX gain:
 
 ```bash
 sed -i 's/tx_gain: 20/tx_gain: 30/' \
   ~/ocudu/configs/du1_b210_n78_20mhz.yml
 ```
 
-不需要重新编译。
+Recompilation is not required.
 
 ---
 
-# 十九、MPTCP 状态
+# XIX. MPTCP Status
 
 ```bash
 grep CONFIG_MPTCP /boot/config-$(uname -r)
 sysctl net.mptcp.enabled
 ```
 
-预期：
+Expected output:
 
 ```text
 CONFIG_MPTCP=y
@@ -509,13 +509,13 @@ CONFIG_MPTCP_IPV6=y
 net.mptcp.enabled = 1
 ```
 
-目前尚未配置 endpoint。
+No MPTCP endpoint has been configured yet.
 
 ---
 
-# 二十、快速诊断命令
+# XX. Quick Diagnostic Commands
 
-进程：
+Processes:
 
 ```bash
 ps aux | grep -E 'ocu|odu|open5gs|mongod' | grep -v grep

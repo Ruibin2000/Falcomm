@@ -1,6 +1,6 @@
-# 3. 从全新 DGX Spark 复现到当前状态的安装步骤
+# 3. Reproducible Installation Procedure for the Current DGX Spark Baseline
 
-目标：从一台全新的 DGX Spark，复现目前已经跑通的：
+Objective: reproduce the currently validated configuration on a clean DGX Spark system:
 
 ```text
 Open5GS
@@ -12,7 +12,7 @@ OCUDU DU
 USRP B210
 ```
 
-平台：
+Platform:
 
 ```text
 DGX Spark
@@ -21,20 +21,20 @@ aarch64
 NVIDIA kernel 7.0.0-1019-nvidia
 ```
 
-注意：
+Constraints:
 
-- 不替换 NVIDIA kernel。
-- 不安装 PREEMPT_RT。
-- 不修改全局 GCC。
-- OCUDU 使用 Clang 18。
-- FlexRIC 以后继续使用系统 GCC 13.3。
-- MongoDB 使用 Docker 中的 MongoDB 7，不使用原生 MongoDB 8。
+- Retain the NVIDIA kernel.
+- Do not install PREEMPT_RT.
+- Do not change the system-wide GCC configuration.
+- Build OCUDU with Clang 18.
+- Use the system GCC 13.3 for future FlexRIC work.
+- Use MongoDB 7 in Docker; do not use native MongoDB 8.
 
 ---
 
-# Phase 0 — Baseline
+# Phase 0 — System Baseline
 
-检查：
+Inspect the operating system and kernel:
 
 ```bash
 uname -m
@@ -82,27 +82,27 @@ sysctl net.mptcp.enabled
 
 ---
 
-# Phase 1 — UHD + B210
+# Phase 1 — UHD and B210
 
-安装：
+Install UHD packages:
 
 ```bash
 sudo apt install libuhd-dev uhd-host
 ```
 
-确认版本：
+Check the installed version:
 
 ```bash
 uhd_config_info --version
 ```
 
-下载 UHD image：
+Download the UHD images:
 
 ```bash
 sudo uhd_images_downloader
 ```
 
-如果普通用户权限不足，确认 rule：
+If device access is denied for an unprivileged user, inspect the udev rule:
 
 ```bash
 dpkg -L uhd-host | grep -i udev
@@ -116,13 +116,13 @@ Reload：
 sudo udevadm control --reload-rules
 ```
 
-拔插 B210 后：
+After reconnecting the B210, run:
 
 ```bash
 uhd_find_devices
 ```
 
-当前 B210：
+Recorded B210 identity:
 
 ```text
 serial: 3271233
@@ -137,7 +137,7 @@ Probe：
 uhd_usrp_probe --args="type=b200,serial=3271233"
 ```
 
-应看到：
+Expected output includes:
 
 ```text
 Operating over USB 3.
@@ -153,7 +153,7 @@ Streaming：
   --duration 20
 ```
 
-目标：
+Acceptance criteria:
 
 ```text
 drop = 0
@@ -163,22 +163,22 @@ timeout = 0
 
 ---
 
-# Phase 2 — OCUDU Build
+# Phase 2 — Build OCUDU
 
-安装 Clang 18：
+Install Clang 18:
 
 ```bash
 sudo apt install clang-18
 ```
 
-确认：
+Verify the compiler version:
 
 ```bash
 clang-18 --version
 clang++-18 --version
 ```
 
-安装依赖：
+Install dependencies:
 
 ```bash
 sudo apt install \
@@ -201,7 +201,7 @@ git clone \
   https://gitlab.com/ocudu/ocudu.git
 ```
 
-确认：
+Verify the repository state and latest commit:
 
 ```bash
 cd ~/ocudu
@@ -209,7 +209,7 @@ git status
 git log -1 --oneline
 ```
 
-应为：
+Expected revision:
 
 ```text
 tag release_26_04
@@ -227,11 +227,11 @@ cmake -S . -B build \
   -DBUILD_TESTING=ON
 ```
 
-注意：
+Note:
 
-`release_26_04` 不使用 `DU_SPLIT_TYPE` CMake variable。
+The `release_26_04` build does not use the `DU_SPLIT_TYPE` CMake variable.
 
-编译 CU：
+Build the CU:
 
 ```bash
 cmake --build build \
@@ -239,7 +239,7 @@ cmake --build build \
   -j 8
 ```
 
-编译 DU Split 8：
+Build the Split 8 DU:
 
 ```bash
 cmake --build build \
@@ -247,7 +247,7 @@ cmake --build build \
   -j 8
 ```
 
-可选 smoke gNB：
+Optionally build the monolithic gNB for a smoke test:
 
 ```bash
 cmake --build build \
@@ -269,9 +269,9 @@ ctest --test-dir build \
 
 ---
 
-# Phase 3 — DU Config
+# Phase 3 — Configure the DU
 
-基于官方模板：
+Start from the upstream template:
 
 ```bash
 cd ~/ocudu
@@ -280,19 +280,19 @@ cp configs/du_rf_b200_tdd_n78_20mhz.yml \
    configs/du1_b210_n78_20mhz.yml
 ```
 
-添加 DU ID：
+Set the DU identifier:
 
 ```yaml
 gnb_du_id: 1
 ```
 
-固定 B210：
+Select B210 #1 by serial number:
 
 ```yaml
 device_args: type=b200,serial=3271233,num_recv_frames=64,num_send_frames=64
 ```
 
-当前最终关键配置：
+The resulting key configuration is:
 
 ```yaml
 gnb_du_id: 1
@@ -333,27 +333,27 @@ build/apps/du_split_8/odu \
 
 ---
 
-# Phase 3 — CU Config
+# Phase 3 — Configure the CU
 
-官方文件：
+Configuration file:
 
 ```text
 ~/ocudu/configs/cu.yml
 ```
 
-把 AMF：
+Change the AMF address from:
 
 ```text
 127.0.1.100
 ```
 
-修改为：
+to:
 
 ```text
 127.0.0.5
 ```
 
-当前：
+The relevant configuration is:
 
 ```yaml
 cu_cp:
@@ -386,44 +386,44 @@ build/apps/cu/ocu \
 
 ---
 
-# Phase 3 — MongoDB
+# Phase 3 — Configure MongoDB
 
-原生 MongoDB 8 在 NVIDIA kernel 7.0 上无法启动。
+Native MongoDB 8 does not start on the NVIDIA 7.0 kernel in the recorded deployment.
 
-如已经安装：
+If it is already installed, disable it and clear its failed state:
 
 ```bash
 sudo systemctl disable --now mongod
 sudo systemctl reset-failed mongod
 ```
 
-保持：
+Confirm that it remains:
 
 ```text
 disabled
 inactive
 ```
 
-使用 Docker：
+Use Docker for MongoDB 7:
 
 ```bash
 sudo docker pull mongo:7.0-jammy
 ```
 
-确认：
+Verify the image architecture:
 
 ```bash
 sudo docker image inspect mongo:7.0-jammy \
   --format '{{.Architecture}} {{.Os}}'
 ```
 
-应为：
+Expected output:
 
 ```text
 arm64 linux
 ```
 
-创建：
+Create and start the container:
 
 ```bash
 sudo docker run -d \
@@ -433,7 +433,7 @@ sudo docker run -d \
   mongo:7.0-jammy
 ```
 
-测试：
+Test database connectivity:
 
 ```bash
 sudo docker exec open5gs-mongo \
@@ -442,40 +442,40 @@ sudo docker exec open5gs-mongo \
 
 ---
 
-# Phase 3 — Open5GS
+# Phase 3 — Configure Open5GS
 
-添加 PPA：
+Add the package archive:
 
 ```bash
 sudo add-apt-repository ppa:open5gs/latest
 ```
 
-安装：
+Install Open5GS:
 
 ```bash
 sudo apt install --no-install-recommends open5gs
 ```
 
-当前版本：
+Recorded version:
 
 ```text
 2.8.0~noble5
 ```
 
-修改：
+Edit:
 
 ```text
 /etc/open5gs/amf.yaml
 ```
 
-将默认：
+Replace the default values:
 
 ```text
 MCC/MNC = 999/70
 TAC = 1
 ```
 
-改为：
+with:
 
 ```yaml
 guami:
@@ -497,19 +497,19 @@ plmn_support:
       - sst: 1
 ```
 
-重启：
+Restart the AMF:
 
 ```bash
 sudo systemctl restart open5gs-amfd
 ```
 
-确认：
+Verify the N2 listener:
 
 ```bash
 sudo ss -lnp | grep 38412
 ```
 
-应看到：
+Expected listener:
 
 ```text
 127.0.0.5:38412
@@ -519,19 +519,19 @@ sudo ss -lnp | grep 38412
 
 # Phase 3 — Runtime Verification
 
-启动 Mongo：
+Start MongoDB:
 
 ```bash
 sudo docker start open5gs-mongo
 ```
 
-启动 Open5GS：
+Start Open5GS:
 
 ```bash
 sudo systemctl start 'open5gs-*'
 ```
 
-启动 CU：
+Start the CU:
 
 ```bash
 cd ~/ocudu
@@ -540,7 +540,7 @@ build/apps/cu/ocu \
   -c configs/cu.yml
 ```
 
-确认：
+Verify that the CU reports:
 
 ```text
 N2: Connection to AMF on 127.0.0.5:38412 completed
@@ -553,14 +553,14 @@ journalctl -u open5gs-amfd -n 50 --no-pager | \
 grep -Ei 'gNB|accepted'
 ```
 
-应看到：
+Expected AMF log entries:
 
 ```text
 gNB-N2 accepted
 Number of gNBs is now 1
 ```
 
-启动 DU：
+Start the DU:
 
 ```bash
 cd ~/ocudu
@@ -569,7 +569,7 @@ build/apps/du_split_8/odu \
   -c configs/du1_b210_n78_20mhz.yml
 ```
 
-确认：
+Verify that the DU reports:
 
 ```text
 Detected Device: B210
@@ -579,19 +579,19 @@ F1-C: Connection to CU-CP on 127.0.10.1:38472 completed
 ==== DU started ===
 ```
 
-验证 F1：
+Verify the F1 association:
 
 ```bash
 sudo ss -anp | grep 38472
 ```
 
-应出现 `ESTAB`。
+The association should be in the `ESTAB` state.
 
 ---
 
-# 当前复现终点
+# Reproduction Endpoint
 
-到这里即复现当前已完成状态：
+At this point, the currently completed configuration has been reproduced:
 
 ```text
 Open5GS
@@ -603,7 +603,7 @@ OCUDU DU1
 B210 #1
 ```
 
-下一步不是安装更多 RAN 组件，而是：
+The next step is UE attachment and end-to-end validation:
 
 ```text
 Phase 4

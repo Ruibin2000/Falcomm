@@ -1,4 +1,4 @@
-# 4. 给 Codex 的 Prompt
+# 4. Development Handoff and Operating Instructions
 # Continue DGX Spark + OCUDU + Open5GS + B210 deployment
 
 You are continuing an already working 5G / AI-RAN testbed deployment.

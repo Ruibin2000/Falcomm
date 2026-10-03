@@ -1,13 +1,13 @@
-# 1. 项目进展介绍
-# DGX Spark + OCUDU + USRP B210 双链路 5G / AI-RAN Testbed
+# 1. Project Progress
+# DGX Spark + OCUDU + USRP B210 Dual-Link 5G/AI-RAN Testbed
 
-最后更新：2026-10-02
+Last updated: 2026-10-02
 
 ---
 
-## 一、项目最终目标
+## I. Project Objective
 
-在一台 NVIDIA DGX Spark 上搭建：
+The project aims to build the following system on a single NVIDIA DGX Spark:
 
 - OCUDU 5G RAN
 - 1 × OCUDU CU
@@ -19,7 +19,7 @@
 - AI channel/rate predictor
 - MPTCP controller / MPTCP server
 
-最终架构：
+Target architecture:
 
 ```text
                          DGX Spark
@@ -54,7 +54,7 @@
                      MPTCP Server
 ```
 
-最终控制链：
+Target control path:
 
 ```text
 DU1 / DU2
@@ -70,25 +70,25 @@ Linux MPTCP path manager / scheduler
 
 ---
 
-# 二、当前整体进度
+# II. Overall Project Status
 
-| Phase | 内容 | 状态 |
+| Phase | Description | Status |
 |---|---|---|
-| Phase 0 | DGX Spark baseline | ✅ 完成 |
-| Phase 1 | UHD + B210 #1 | ✅ 完成 |
-| Phase 2 | OCUDU build | ✅ 完成 |
-| Phase 3 | 单 CU + 单 DU1 + B210 #1 | ✅ 完成 |
-| Phase 3 | Open5GS 基础部署 | ✅ 完成 |
-| Phase 4 | UE subscriber + attach | ⏳ 下一步 |
-| Phase 5 | 第二个 DU + B210 #2 | ⏳ 未开始 |
-| Phase 6 | Real-time tuning | ⏳ 未开始 |
-| Phase 7 | FlexRIC | ⏳ 未开始 |
-| Phase 8 | KPM xApp | ⏳ 未开始 |
-| Phase 9 | MPTCP 双 path | ⏳ 未开始 |
-| Phase 10 | RIC-assisted MPTCP | ⏳ 未开始 |
-| Phase 11 | AI proactive steering | ⏳ 未开始 |
+| Phase 0 | DGX Spark baseline | ✅ Complete |
+| Phase 1 | UHD and B210 #1 | ✅ Complete |
+| Phase 2 | OCUDU build | ✅ Complete |
+| Phase 3 | One CU, one DU1, and B210 #1 | ✅ Complete |
+| Phase 3 | Basic Open5GS deployment | ✅ Complete |
+| Phase 4 | UE subscriber provisioning and attachment | ⏳ Next |
+| Phase 5 | Second DU and B210 #2 | ⏳ Not started |
+| Phase 6 | Real-time tuning | ⏳ Not started |
+| Phase 7 | FlexRIC | ⏳ Not started |
+| Phase 8 | KPM xApp | ⏳ Not started |
+| Phase 9 | Dual-path MPTCP | ⏳ Not started |
+| Phase 10 | RIC-assisted MPTCP | ⏳ Not started |
+| Phase 11 | AI-based proactive steering | ⏳ Not started |
 
-当前已经实际跑通：
+The following runtime chain has been demonstrated:
 
 ```text
 MongoDB 7
@@ -104,7 +104,7 @@ USRP B210 #1
 
 ---
 
-# 三、DGX Spark Baseline
+# III. DGX Spark Baseline
 
 ```text
 Architecture: aarch64
@@ -116,7 +116,7 @@ NUMA nodes:   1
 RAM:          121 GiB
 ```
 
-CPU：
+CPU:
 
 ```text
 Cortex-A725:
@@ -128,7 +128,7 @@ Cortex-X925:
   Max 3.9 GHz
 ```
 
-目前尚未做：
+The following real-time optimizations have not been applied:
 
 ```text
 isolcpus
@@ -140,13 +140,13 @@ CPU pinning
 RT priority capability
 ```
 
-这是刻意的：先跑通功能，再做 Phase 6 实时优化。
+This is intentional: functional validation precedes the Phase 6 real-time optimization work.
 
 ---
 
-# 四、MPTCP Kernel 状态
+# IV. MPTCP Kernel Status
 
-当前 NVIDIA kernel 已原生支持：
+The current NVIDIA kernel provides native support for:
 
 ```text
 CONFIG_MPTCP=y
@@ -154,23 +154,23 @@ CONFIG_MPTCP_IPV6=y
 net.mptcp.enabled = 1
 ```
 
-结论：
+Consequently:
 
-- 不需要为了 MPTCP 换 kernel。
-- 不需要关闭 MPTCP。
-- 以后只配置 MPTCP endpoint/path manager/scheduler。
+- No kernel replacement is required for MPTCP.
+- MPTCP does not need to be disabled.
+- Subsequent work should configure MPTCP endpoints, the path manager, and the scheduler.
 
 ---
 
-# 五、编译器策略
+# V. Compiler Strategy
 
-系统默认：
+System default:
 
 ```text
 gcc / g++ 13.3
 ```
 
-OCUDU 使用：
+OCUDU is built with:
 
 ```text
 clang-18 / clang++-18
@@ -178,7 +178,7 @@ Version: 18.1.3
 Target: aarch64-unknown-linux-gnu
 ```
 
-计划：
+Planned compiler assignments:
 
 ```text
 OCUDU      → Clang 18
@@ -189,19 +189,19 @@ AI         → Python / CUDA
 MPTCP      → NVIDIA Linux kernel + userspace tools
 ```
 
-未修改 `/usr/bin/gcc` 默认版本。
+The default `/usr/bin/gcc` selection has not been modified.
 
 ---
 
-# 六、UHD / B210 #1
+# VI. UHD and B210 #1
 
-UHD：
+UHD:
 
 ```text
 4.6.0.0+ds1-5.1ubuntu0.24.04.1
 ```
 
-B210 #1：
+B210 #1:
 
 ```text
 Product: B210
@@ -210,7 +210,7 @@ Serial:  3271233
 Type:    b200
 ```
 
-已验证：
+The following checks passed:
 
 ```text
 uhd_find_devices       PASS
@@ -219,7 +219,7 @@ USB 3                  PASS
 Register loopback      PASS
 ```
 
-USB streaming benchmark：
+USB streaming benchmark:
 
 ```text
 RX rate: 30.72 MS/s
@@ -231,11 +231,11 @@ Seq errors Rx: 0
 Timeouts Rx:   0
 ```
 
-注意：
+Note:
 
-30.72 MS/s 只是 USB/UHD 压力测试。
+The 30.72 MS/s measurement is a USB/UHD stress test only.
 
-OCUDU 当前实际配置：
+The current OCUDU configuration uses:
 
 ```text
 srate: 23.04 MS/s
@@ -243,15 +243,15 @@ srate: 23.04 MS/s
 
 ---
 
-# 七、OCUDU 版本与 Build
+# VII. OCUDU Version and Build
 
-源码：
+Source repository:
 
 ```text
 ~/ocudu
 ```
 
-版本：
+Version:
 
 ```text
 Tag:     release_26_04
@@ -259,13 +259,13 @@ Commit:  050a2bb
 Version: 26.04.0
 ```
 
-Build dir：
+Build dir:
 
 ```text
 ~/ocudu/build
 ```
 
-关键 binary：
+Key binaries:
 
 ```text
 ~/ocudu/build/apps/cu/ocu
@@ -273,7 +273,7 @@ Build dir：
 ~/ocudu/build/apps/gnb_split_8/gnb
 ```
 
-最终架构使用：
+The target split architecture uses:
 
 ```text
 ocu
@@ -281,9 +281,9 @@ ocu
 odu_split_8
 ```
 
-`gnb_split_8` 仅用于 smoke build，不作为最终拓扑。
+`gnb_split_8` was built for a smoke test and is not part of the target topology.
 
-已通过：
+The following test passed:
 
 ```text
 band_helper_test
@@ -293,15 +293,15 @@ band_helper_test
 
 ---
 
-# 八、DU1 当前配置
+# VIII. Current DU1 Configuration
 
-文件：
+Configuration file:
 
 ```text
 ~/ocudu/configs/du1_b210_n78_20mhz.yml
 ```
 
-当前配置：
+Current configuration:
 
 ```yaml
 gnb_du_id: 1
@@ -336,7 +336,7 @@ log:
   all_level: warning
 ```
 
-当前 RF：
+Current RF parameters:
 
 ```text
 DU ID:      1
@@ -351,7 +351,7 @@ TX gain:    20
 RX gain:    40
 ```
 
-实际启动已确认：
+Runtime startup confirmed:
 
 ```text
 Cell pci=1, bw=20 MHz, 1T1R,
@@ -363,15 +363,15 @@ ul_freq=3750 MHz
 
 ---
 
-# 九、CU 当前配置
+# IX. Current CU Configuration
 
-文件：
+Configuration file:
 
 ```text
 ~/ocudu/configs/cu.yml
 ```
 
-关键配置：
+Relevant configuration:
 
 ```yaml
 cu_cp:
@@ -394,7 +394,7 @@ cu_up:
       - bind_addr: 127.0.10.1
 ```
 
-地址：
+Addresses:
 
 ```text
 CU → AMF N2:
@@ -407,28 +407,28 @@ DU1: 127.0.10.2
 
 ---
 
-# 十、Open5GS
+# X. Open5GS
 
-版本：
+Version:
 
 ```text
 Open5GS 2.8.0~noble5
 ```
 
-来源：
+Package source:
 
 ```text
 ppa:open5gs/latest
 Ubuntu Noble arm64
 ```
 
-AMF：
+AMF:
 
 ```text
 127.0.0.5:38412
 ```
 
-5GC identity：
+5GC identity:
 
 ```text
 PLMN = 00101
@@ -438,19 +438,19 @@ TAC  = 7
 SST  = 1
 ```
 
-AMF 配置：
+AMF configuration:
 
 ```text
 /etc/open5gs/amf.yaml
 ```
 
-备份：
+Backup:
 
 ```text
 /etc/open5gs/amf.yaml.bak
 ```
 
-AMF 已验证：
+The AMF was verified to report:
 
 ```text
 gNB-N2 accepted
@@ -459,33 +459,33 @@ Number of gNBs is now 1
 
 ---
 
-# 十一、MongoDB
+# XI. MongoDB
 
-原生 MongoDB 8 与当前 DGX Spark kernel 不兼容。
+Native MongoDB 8 is incompatible with the current DGX Spark kernel.
 
-原生服务：
+Native service:
 
 ```text
 mongod.service
 disabled
 ```
 
-如果 systemd 显示 failed，只需要：
+If systemd reports a failed state, clear it with:
 
 ```bash
 sudo systemctl reset-failed mongod
 ```
 
-不要启动原生 MongoDB 8。
+Do not start native MongoDB 8.
 
-实际使用：
+The deployed database is:
 
 ```text
 MongoDB 7
 Docker container
 ```
 
-容器：
+Container:
 
 ```text
 Name:  open5gs-mongo
@@ -493,19 +493,19 @@ Image: mongo:7.0-jammy
 Arch:  arm64
 ```
 
-映射：
+Port mapping:
 
 ```text
 127.0.0.1:27017 → container:27017
 ```
 
-Persistent volume：
+Persistent volume:
 
 ```text
 open5gs-mongo-data
 ```
 
-已验证：
+The following ping result was verified:
 
 ```text
 { ok: 1 }
@@ -513,46 +513,46 @@ open5gs-mongo-data
 
 ---
 
-# 十二、已经验证的 Runtime Chain
+# XII. Verified Runtime Chain
 
 ## Open5GS ↔ CU
 
-CU：
+CU:
 
 ```text
 N2: Connection to AMF on 127.0.0.5:38412 completed
 ```
 
-AMF：
+AMF:
 
 ```text
 gNB-N2 accepted
 Number of gNBs is now 1
 ```
 
-PASS。
+PASS.
 
 ## CU ↔ DU1
 
-CU：
+CU:
 
 ```text
 127.0.10.1:38472
 ```
 
-DU：
+DU:
 
 ```text
 F1-C: Connection to CU-CP on 127.0.10.1:38472 completed
 ```
 
-`ss` 已确认 SCTP `ESTAB`。
+The SCTP association was confirmed in the `ESTAB` state using `ss`.
 
-PASS。
+PASS.
 
 ## DU1 ↔ B210
 
-DU：
+DU:
 
 ```text
 Detected Device: B210
@@ -562,21 +562,21 @@ Clock rate: 23.04 MHz
 ==== DU started ===
 ```
 
-PASS。
+PASS.
 
 ---
 
-# 十三、当前 Known Warning
+# XIII. Known Runtime Warning
 
-启动 CU/DU 时：
+When starting the CU/DU, the following warning may appear:
 
 ```text
 Scheduling priority ... Not enough privileges
 ```
 
-目前不处理。
+This warning is deferred at the current stage.
 
-计划 Phase 6 再做：
+The following items are planned for Phase 6:
 
 ```text
 CAP_SYS_NICE / RT scheduling
@@ -590,9 +590,9 @@ idle / C-state tuning
 
 ---
 
-# 十四、RF 注意事项
+# XIV. RF Operating Considerations
 
-当前 DU 启动后，B210 会实际发射：
+When the current DU is active, the B210 transmits at:
 
 ```text
 ~3.75 GHz
@@ -600,9 +600,9 @@ n78
 TX gain = 20
 ```
 
-B210 RF A TX 红灯表示正在发送，不是错误灯。
+The red RF A TX indicator on the B210 denotes active transmission; it is not an error indicator.
 
-即使没有 UE，gNB 仍会发送：
+The gNB transmits the following signals even when no UE is present:
 
 ```text
 PSS
@@ -612,17 +612,17 @@ SSB
 broadcast/system information related signals
 ```
 
-当前 B210 可以一直通过 USB 接在 Spark 上。
+The B210 may remain connected to the Spark over USB.
 
-暂停实验时不需要拔 USB，只需要停掉 DU。
+To pause the experiment, stop the DU; disconnecting the USB cable is unnecessary.
 
-不要在未经授权的开放环境直接 OTA 发射。
+Do not conduct over-the-air transmission in an unlicensed or otherwise unauthorized environment.
 
 ---
 
-# 十五、当前暂停状态
+# XV. Current Paused State
 
-建议暂停：
+The intended paused state is:
 
 ```text
 DU           stopped
@@ -633,15 +633,15 @@ Docker       active
 B210 USB     connected is OK
 ```
 
-当前已经确认 MongoDB container 停止时：
+When the MongoDB container is stopped, the following command should return:
 
 ```bash
 sudo docker ps --filter name=open5gs-mongo
 ```
 
-为空是正常的。
+no running container; this is expected.
 
-容器本身应通过以下命令确认仍存在：
+Confirm that the container still exists with:
 
 ```bash
 sudo docker ps -a --filter name=open5gs-mongo
@@ -649,15 +649,15 @@ sudo docker ps -a --filter name=open5gs-mongo
 
 ---
 
-# 十六、下一阶段
+# XVI. Next Phase
 
-下一步：
+The next task is:
 
 ```text
 Phase 4 — UE attach
 ```
 
-顺序：
+Planned sequence:
 
 ```text
 Open5GS subscriber
@@ -679,7 +679,7 @@ ping
 iperf
 ```
 
-单链路 UE 完成后，再进入：
+After validating UE operation on the single link, proceed to:
 
 ```text
 DU2 + B210 #2
