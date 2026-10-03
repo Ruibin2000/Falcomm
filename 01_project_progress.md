@@ -13,60 +13,14 @@ The project aims to build the following system on a single NVIDIA DGX Spark:
 - 1 × OCUDU CU
 - 2 × OCUDU DU
 - 2 × Ettus USRP B210
+- 2 × Quectel UE modems and one UE host with an MPTCP client and two IP interfaces
+- Pi-Radio frequency converters for the approximately 7 GHz FR3 OTA path
 - Open5GS 5GC
 - FlexRIC Near-RT RIC
 - RIC xApp
-- AI channel/rate predictor
-- MPTCP controller / MPTCP server
+- Server application and MPTCP server
 
-Target architecture:
-
-```text
-                         DGX Spark
-          ┌─────────────────────────────────┐
-          │                                 │
-          │            FlexRIC              │
-          │          Near-RT RIC            │
-          │           ▲       ▲             │
-          │         E2│       │E2           │
-          │           │       │             │
-          │        OCUDU DU1 OCUDU DU2      │
-          │           │       │             │
-          │          UHD     UHD            │
-          └───────────┼───────┼─────────────┘
-                      │       │
-                    USB3    USB3
-                      │       │
-                  B210 #1  B210 #2
-                      │       │
-                    Cell 1  Cell 2
-                       \     /
-                        \ F1/
-                         \ /
-                       OCUDU CU
-                          │
-                        N2/N3
-                          │
-                       Open5GS
-                          │
-                          N6
-                          │
-                     MPTCP Server
-```
-
-Target control path:
-
-```text
-DU1 / DU2
-   ↓ E2
-FlexRIC
-   ↓
-xApp
-   ↓
-AI / policy controller
-   ↓
-Linux MPTCP path manager / scheduler
-```
+The end-to-end target topology, including the UE side, FR1 and FR3 OTA paths, network side, RIC, and MPTCP server, is specified in the [README target architecture](README.md#target-architecture). The FR1 OTA path is centered at 3.5 GHz. The FR3 path uses Pi-Radio frequency conversion between 3.5 GHz equipment interfaces and an approximately 7 GHz OTA link. RAN measurements are delivered to FlexRIC over E2 and used to inform server-side MPTCP path steering.
 
 ---
 

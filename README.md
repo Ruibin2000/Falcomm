@@ -1,24 +1,101 @@
 # Falcomm
 
-Falcomm is a 5G/AI-RAN experimental platform based on the NVIDIA DGX Spark. The project integrates OCUDU, Open5GS, FlexRIC, and AI-based control logic on a single host to investigate network measurement, path selection, and MPTCP traffic scheduling over multiple 5G links.
+Falcomm is a 5G/AI-RAN experimental platform based on the NVIDIA DGX Spark. The project combines a dual-path UE setup, two over-the-air radio links, a two-cell RAN and 5G core, FlexRIC, and an MPTCP server to study path steering using RAN measurements. The present implementation baseline uses OCUDU and Open5GS; the target architecture also allows an OAI-based RAN.
 
 ## Target Architecture
 
 ```mermaid
 flowchart LR
-    B1[USRP B210 #1] --> DU1[OCUDU DU1]
-    B2[USRP B210 #2] --> DU2[OCUDU DU2]
-    DU1 -->|F1| CU[OCUDU CU]
-    DU2 -->|F1| CU
-    DU1 -->|E2| RIC[FlexRIC Near-RT RIC]
-    DU2 -->|E2| RIC
-    CU -->|N2/N3| Core[Open5GS 5GC]
-    Core -->|N6| Server[MPTCP Server]
-    RIC --> xApp[xApp]
-    xApp --> AI[AI Policy Controller]
+    subgraph UE[UE Side]
+        Host[UE Host<br/>MPTCP client<br/>Two IP interfaces]
+        UE1[Quectel UE<br/>FR1 path]
+        UE3[Quectel UE<br/>FR3 path]
+        Up[Pi-Radio<br/>3.5 to 7 GHz]
+        Host <-->|IP interface 1| UE1
+        Host <-->|IP interface 2| UE3
+        UE3 <-->|RF, 3.5 GHz| Up
+    end
+
+    subgraph OTA[Over-the-Air Links]
+        Link1[FR1 link<br/>3.5 GHz]
+        Link3[FR3 link<br/>approximately 7 GHz]
+        Motion[Motion and blockage<br/>UE movement and blockers]
+        Interference[Interference transmitter<br/>controlled lab test]
+        Motion -.-> Link1
+        Motion -.-> Link3
+        Interference -.-> Link3
+    end
+
+    subgraph Network[Network Side]
+        Cell1[USRP FR1 cell]
+        Down[Pi-Radio<br/>7 to 3.5 GHz]
+        Cell3[USRP FR3 cell]
+        RAN[Two-cell RAN and 5G core<br/>OAI or OCUDU RAN]
+        RIC[Near-RT RIC<br/>FlexRIC xApps]
+        App[Server application<br/>Control and video]
+        Server[MPTCP server<br/>RIC-assisted path steering]
+        Cell1 <-->|FR1 radio link| Link1
+        Link3 <-->|FR3 radio link| Down
+        Down <-->|RF, 3.5 GHz| Cell3
+        Cell1 <-->|Radio unit interface| RAN
+        Cell3 <-->|Radio unit interface| RAN
+        RAN <-->|E2 measurements and control| RIC
+        RAN <-->|5G user plane| Server
+        RIC <-->|RIC data| App
+        App <-->|Application traffic| Server
+    end
+
+    UE1 <-->|3.5 GHz OTA| Link1
+    Up <-->|approximately 7 GHz OTA| Link3
 ```
 
-The intended control loop uses E2 measurements from the DUs at FlexRIC. An xApp and AI controller then adjust Linux MPTCP path selection or scheduling policies.
+The FR1 path operates over the air at 3.5 GHz. For the FR3 path, Pi-Radio units upconvert the UE-side 3.5 GHz signal to approximately 7 GHz for the OTA link and downconvert it at the network side. FlexRIC xApps use RAN measurements to inform MPTCP path steering. The current verified radio configuration remains a single OCUDU DU and B210 operating at 3.75 GHz; the two-path topology shown here is the project target, not a completed deployment.
+
+### Network-Side Implementation: OCUDU, Open5GS, and FlexRIC
+
+The following diagram expands the planned network-side implementation on the DGX Spark. The FR1 and FR3 radio branches terminate at separate OCUDU DUs. The FR3 Pi-Radio unit downconverts the approximately 7 GHz OTA signal to the 3.5 GHz interface used by the network-side radio chain.
+
+```mermaid
+flowchart LR
+    subgraph DGX[NVIDIA DGX Spark: RAN, Core, and Control]
+        DU1[OCUDU DU1]
+        DU2[OCUDU DU2]
+        CU[OCUDU CU]
+        Core[Open5GS 5G Core<br/>AMF and SMF]
+        UPF[Open5GS UPF]
+        RIC[FlexRIC Near-RT RIC]
+        XAPP[KPM xApp]
+        App[Server application]
+        MPTCP[MPTCP server]
+        DN[External data network]
+
+        DU1 <-->|F1-C / F1-U| CU
+        DU2 <-->|F1-C / F1-U| CU
+        DU1 <-->|E2 measurements / control| RIC
+        DU2 <-->|E2 measurements / control| RIC
+        CU <-->|N2| Core
+        CU <-->|N3| UPF
+        UPF <-->|N6 user plane| DN
+        DN <-->|IP connectivity| MPTCP
+        RIC <-->|RIC API| XAPP
+        XAPP -->|path-steering input| App
+        App <-->|application traffic| MPTCP
+    end
+
+    subgraph RF[Radio Front Ends and OTA Interface]
+        B1[USRP B210<br/>FR1 cell]
+        OTA3[FR3 OTA<br/>approximately 7 GHz]
+        PR[Pi-Radio<br/>7 to 3.5 GHz]
+        B2[USRP B210<br/>FR3 cell]
+        OTA3 <-->|RF| PR
+        PR <-->|RF, 3.5 GHz| B2
+    end
+
+    B1 <-->|USB 3 and UHD| DU1
+    B2 <-->|USB 3 and UHD| DU2
+```
+
+In the target system, E2 carries RAN measurements to FlexRIC, and the xApp provides path-steering input to the server application. The application coordinates with the MPTCP server, which exchanges user traffic with the UE through the 5G core. This is a target design; only the single-DU N2/F1 connectivity described in the current-status section has been verified.
 
 ## Current Status
 

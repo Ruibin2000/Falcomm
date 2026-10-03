@@ -13,53 +13,18 @@ Work incrementally and validate every step from real command output.
 
 ## Project Goal
 
-Build a dual-link 5G / AI-RAN testbed on one NVIDIA DGX Spark:
+Build the target end-to-end topology shown in the [README target architecture](README.md#target-architecture) on one NVIDIA DGX Spark. The topology comprises a UE host with two IP interfaces and Quectel modems, FR1 and FR3 OTA paths, a two-cell RAN and 5G core, FlexRIC xApps, a server application, and an MPTCP server. The FR3 path uses Pi-Radio frequency conversion for an approximately 7 GHz OTA link.
+
+Planned control path:
 
 ```text
-                         DGX Spark
-          ┌─────────────────────────────────┐
-          │                                 │
-          │            FlexRIC              │
-          │          Near-RT RIC            │
-          │           ▲       ▲             │
-          │         E2│       │E2           │
-          │           │       │             │
-          │        OCUDU DU1 OCUDU DU2      │
-          │           │       │             │
-          │          UHD     UHD            │
-          └───────────┼───────┼─────────────┘
-                      │       │
-                    USB3    USB3
-                      │       │
-                  B210 #1  B210 #2
-                      │       │
-                    Cell 1  Cell 2
-                       \     /
-                        \ F1/
-                         \ /
-                       OCUDU CU
-                          │
-                        N2/N3
-                          │
-                       Open5GS
-                          │
-                          N6
-                          │
-                     MPTCP Server
-```
-
-Later:
-
-```text
-DU1 / DU2
-   ↓ E2
-FlexRIC
+Two-cell RAN
+   ↓ E2 measurements
+FlexRIC xApps
+   ↓ RIC measurements / steering decisions
+Server application and MPTCP server
    ↓
-xApp
-   ↓
-AI predictor / policy controller
-   ↓
-Linux MPTCP path manager / scheduler
+UE host MPTCP client selects the FR1 and FR3 paths
 ```
 
 ---
