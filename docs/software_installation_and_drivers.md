@@ -1,0 +1,392 @@
+# Software Installation, Drivers, and OCUDU Environment
+
+Updated: 2026-10-05. This document records the software dependencies, device drivers, build environment, and installation issues for the DGX Spark and UE laptop. It combines earlier installation records with inspection of installed packages, the OCUDU CMake cache, and the UHD udev rules. Commands describe installation or environment inspection; they were not used to reinstall the working system during this update.
+
+For experiment startup, modem registration, PDU sessions, traffic, and shutdown, use the [Full Reproduction Runbook](full_reproduction_runbook.md). Executable CU/DU and core configuration values are recorded in [Project Progress](project_progress_and_configuration.md#configuration-records); registration and data-session failures are in the [2026-10-05 debug record](troubleshooting/2026-10-05_sa_bringup.md).
+
+## 1. Software baseline and host constraints
+
+| Component | Recorded working environment |
+|---|---|
+| Spark | NVIDIA DGX Spark / GB10, Ubuntu 24.04.5 LTS, aarch64 / arm64 |
+| Kernel | NVIDIA `7.0.0-1019-nvidia`, PREEMPT_DYNAMIC |
+| System compiler | GCC/G++ 13.3, default compiler selection retained |
+| OCUDU compiler | Clang/Clang++ 18.1.3, C++17 |
+| Build system | CMake 3.28.3, Make; Release build |
+| OCUDU | `release_26_04`, commit `050a2bb`, checkout `/home/nyu/ocudu` |
+| Radio software | Ubuntu UHD 4.6.0.0, `libuhd-dev` and `uhd-host` |
+| Core software | Open5GS arm64 packages `2.8.0~noble5` |
+| Database | MongoDB 7, Docker image `mongo:7.0-jammy`, arm64 |
+| Container runtime | Installed Docker CE package `5:29.6.2-1~ubuntu.24.04~noble` |
+| Modem tools inspected on Spark | ModemManager 1.23.4, libqmi-utils 1.35.2, minicom 2.9 |
+| UE laptop | Ubuntu/Linux with USB serial and QMI kernel drivers; its kernel/version must be checked independently |
+
+Retain the NVIDIA kernel and system compiler defaults. Select Clang for OCUDU through CMake, rather than changing compiler alternatives. Future FlexRIC/xApp builds were planned with GCC; Python/CUDA work remains a separate AI development stage. Installing a generic kernel, PREEMPT_RT, CUDA toolkit, or NVIDIA driver replacement is not part of the recorded OCUDU installation.
+
+`[SPARK]` Record the host and toolchain before installation:
+
+```bash
+uname -m
+uname -r
+cat /etc/os-release
+dpkg --print-architecture
+lscpu
+free -h
+gcc --version
+g++ --version
+cmake --version
+```
+
+The package architecture is `arm64`; compiler/host output uses `aarch64`. Package repositories and container tags may advance. Compare installed versions against this table and retain the exact version output when reproducing on another host.
+
+## 2. Install the Spark development dependencies
+
+`[SPARK]` On a new host:
+
+```bash
+sudo apt update
+sudo apt install -y build-essential clang-18 cmake make git pkg-config \
+  ca-certificates curl software-properties-common usbutils \
+  libuhd-dev uhd-host libmbedtls-dev libsctp-dev \
+  libyaml-cpp-dev libfftw3-dev libgtest-dev
+```
+
+| Package | Role in this deployment |
+|---|---|
+| `clang-18` | Recorded OCUDU C/C++ compiler |
+| `cmake`, `make`, `git`, `pkg-config` | Source checkout, build configuration, compilation and dependency discovery |
+| `libuhd-dev` | UHD headers and link library for the radio implementation |
+| `uhd-host` | UHD utilities, device-image downloader and USB access rules |
+| `libmbedtls-dev` | Cryptographic library used by OCUDU |
+| `libsctp-dev` | SCTP development support for N2 and F1-C |
+| `libyaml-cpp-dev` | YAML configuration parser |
+| `libfftw3-dev` | FFTW, including the single-precision FFT library found by CMake |
+| `libgtest-dev` | Build dependency when `BUILD_TESTING=ON` |
+| `usbutils` | USB enumeration and negotiated-speed inspection |
+
+`[SPARK]` Inspect installed versions:
+
+```bash
+clang-18 --version
+clang++-18 --version
+pkg-config --modversion uhd
+dpkg-query -W clang-18 cmake libuhd-dev uhd-host \
+  libmbedtls-dev libsctp-dev libyaml-cpp-dev libfftw3-dev libgtest-dev
+```
+
+The working build does not require ZeroMQ, DPDK, LibNUMA, Intel MKL, or an ARM performance library. In the inspected cache, `ENABLE_ZEROMQ=ON` was the default, but `ZEROMQ_FOUND=FALSE`; the radio implementation uses UHD. Do not interpret an optional-library discovery warning as a missing B210 driver.
+
+## 3. UHD, B210 images, and USB access
+
+### 3.1 Driver and library layout
+
+The B210 software path is OCUDU → UHD → libusb/Linux USB → B210. The recorded setup uses distribution UHD packages and their device images. No separate vendor kernel-module build was recorded. The Ubuntu package installation is documented in the [UHD 4.6 binary installation guide](https://files.ettus.com/manual_archive/v4.6.0.0/html/page_install.html).
+
+`[SPARK]` Download device images for the installed UHD version:
+
+```bash
+uhd_config_info --version
+sudo uhd_images_downloader
+dpkg -L uhd-host | grep -Ei 'udev|images|uhd_images_downloader'
+```
+
+Keep UHD headers, runtime library, utilities, and images from a consistent installation. If both `/usr` distribution packages and a `/usr/local` source installation exist, inspect library resolution before changing the system library path.
+
+### 3.2 udev rules and access failures
+
+The inspected package installs `/usr/lib/udev/rules.d/60-uhd-host.rules`. Its B200-series entries include USB VID/PID `2500:0020`, `2500:0021`, and `2500:0022`, with `MODE:="0666"`. These are existing package rules, not proposed new permissions.
+
+`[SPARK]`
+
+```bash
+dpkg -L uhd-host | grep -i udev
+grep -nE '2500|0020|0021|0022|MODE' /usr/lib/udev/rules.d/60-uhd-host.rules
+lsusb
+lsusb -t
+```
+
+If package rules were just installed or intentionally changed, reload them and reconnect the stopped radio:
+
+`[SPARK]`
+
+```bash
+sudo udevadm control --reload-rules
+```
+
+Device-access failures encountered during environment inspection must be separated from actual driver failure. Compare access in a normal host terminal with privileged access, inspect the enumerated USB device and package rules, and account for any execution sandbox's USB restrictions. Do not rewrite udev rules solely because a sandbox cannot open libusb devices.
+
+### 3.3 Hardware detection and USB speed
+
+Stop DU before any UHD discovery or probe. For another B210, replace the recorded serial with the detected device's serial.
+
+`[SPARK]`
+
+```bash
+uhd_find_devices
+uhd_usrp_probe --args="type=b200,serial=3271233"
+lsusb -t
+```
+
+Expected evidence is B210 serial `3271233`, USB 3 / `5000M`, and successful register loopback tests. This testbed's working DU transport is USB 3. A `480M` path warrants inspection of the cable, hub and host port. The [B2x0 hardware manual](https://files.ettus.com/manual/page_usrp_b200.html) documents the device's USB and image requirements.
+
+The earlier 30.72 MS/s, 20-second RX benchmark passed without drops, overruns, sequence errors or timeouts. This is historical USB/UHD evidence; the NR configuration uses 23.04 MS/s. Benchmarking and RF startup belong to the operational procedure.
+
+## 4. OCUDU source and build environment
+
+### 4.1 Source checkout
+
+`[SPARK]` Clone only when the working checkout does not already exist:
+
+```bash
+cd /home/nyu
+git clone --branch release_26_04 --depth 1 https://gitlab.com/ocudu/ocudu.git
+cd /home/nyu/ocudu
+git log -1 --oneline
+git describe --tags --always
+```
+
+The recorded revision is `050a2bb` / `release_26_04`. Adapt `/home/nyu` for another account. Preserve an existing checkout and its local CU/DU configuration when inspecting or rebuilding the working host.
+
+### 4.2 Configure and compile
+
+`[SPARK]` Configure a new build directory with the recorded compiler and build type:
+
+```bash
+cd /home/nyu/ocudu
+cmake -S . -B build \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER=clang-18 \
+  -DCMAKE_CXX_COMPILER=clang++-18 \
+  -DENABLE_UHD=ON \
+  -DBUILD_TESTING=ON
+cmake --build build --target ocu -j 8
+cmake --build build --target odu_split_8 -j 8
+```
+
+If `build` was configured with another compiler, use a separate directory such as `build-clang18` and adjust the later paths. Reusing a CMake cache from a different compiler can obscure dependency and compiler changes. The system GCC/G++ selection remains unchanged.
+
+| Item | Inspected working value |
+|---|---|
+| C++ language standard | C++17, declared in the OCUDU source |
+| C compiler / C++ compiler | `/usr/bin/clang-18` / `/usr/bin/clang++-18` |
+| `CMAKE_BUILD_TYPE` | `Release` |
+| `BUILD_TESTING` | `ON`; this enables test compilation, not automatic test execution |
+| `ENABLE_UHD` | `ON`; UHD headers/library found under `/usr` |
+| FFTW | Single-precision `libfftw3f.so` under `/usr/lib/aarch64-linux-gnu` |
+| ZeroMQ | Default option ON, library not found; unused by this deployment |
+| LibNUMA / DPDK | Disabled in the recorded build |
+
+`release_26_04` does not use the `DU_SPLIT_TYPE` CMake variable. Its DU build target is **`odu_split_8`**, while the executable filename is **`odu`**. An unused-variable warning from `DU_SPLIT_TYPE` is addressed by using the supported targets, not by changing the radio driver.
+
+### 4.3 Build artifacts and library resolution
+
+`[SPARK]`
+
+```bash
+cd /home/nyu/ocudu
+ls -l build/apps/cu/ocu build/apps/du_split_8/odu
+grep -E '^(CMAKE_BUILD_TYPE|CMAKE_C_COMPILER|CMAKE_CXX_COMPILER|ENABLE_UHD|BUILD_TESTING|UHD_INCLUDE_DIRS|UHD_LIBRARIES|ZEROMQ_FOUND):' build/CMakeCache.txt
+ldd build/apps/du_split_8/odu | grep -E 'uhd|usb|sctp|yaml|not found'
+```
+
+Acceptance requires both executable files and no unresolved runtime libraries. The earlier monolithic `gnb_split_8` build and `band_helper_test` were successful historical checks. They are not installation requirements for operating the split CU/DU deployment.
+
+Runtime configuration remains at `/home/nyu/ocudu/configs/cu.yml` and `configs/du1_b210_n78_20mhz.yml`. Use [the configuration record](project_progress_and_configuration.md#configuration-records) when preparing those files. INFO log levels, RF gain, PLMN, and session type are deployment settings rather than compiler or device-driver fixes.
+
+## 5. Docker and the MongoDB compatibility workaround
+
+### 5.1 Container runtime
+
+The working Spark has Docker CE and `containerd.io`. Inspect an existing installation before considering another package provider:
+
+`[SPARK]`
+
+```bash
+docker --version
+dpkg-query -W docker-ce docker-ce-cli containerd.io
+sudo docker info
+```
+
+For a new Ubuntu host with no existing Docker installation, the following repository setup follows the [official Docker Ubuntu installation procedure](https://docs.docker.com/engine/install/ubuntu/). Check that the new host has no conflicting Docker/containerd packages before using it.
+
+`[SPARK]`
+
+```bash
+sudo apt update
+sudo apt install -y ca-certificates curl
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+sudo tee /etc/apt/sources.list.d/docker.sources >/dev/null <<EOF
+Types: deb
+URIs: https://download.docker.com/linux/ubuntu
+Suites: $(. /etc/os-release && printf '%s' "${UBUNTU_CODENAME:-$VERSION_CODENAME}")
+Components: stable
+Architectures: $(dpkg --print-architecture)
+Signed-By: /etc/apt/keyrings/docker.asc
+EOF
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo systemctl enable --now docker
+```
+
+This installs the repository's available version; it does not pin Docker to the recorded package version. Docker administration commands use sudo in this documentation.
+
+### 5.2 Native MongoDB failure and selected replacement
+
+Native MongoDB 8 failed on the recorded Spark/NVIDIA-kernel environment. The retained workaround is MongoDB 7 in an arm64 Docker container. The available record does not isolate the failure sufficiently to claim that every MongoDB 8 installation fails on every NVIDIA kernel.
+
+`[SPARK]` If the failed native service exists, retain its disabled state:
+
+```bash
+sudo systemctl disable --now mongod
+sudo systemctl reset-failed mongod
+```
+
+`[SPARK]` Inspect the existing container first; pull the image for a new installation:
+
+```bash
+sudo docker ps -a --filter name=open5gs-mongo
+sudo docker pull mongo:7.0-jammy
+sudo docker image inspect mongo:7.0-jammy --format '{{.Architecture}} {{.Os}}'
+```
+
+Require `arm64 linux`. Only when `open5gs-mongo` does not already exist:
+
+`[SPARK]`
+
+```bash
+sudo docker run -d \
+  --name open5gs-mongo \
+  -p 127.0.0.1:27017:27017 \
+  -v open5gs-mongo-data:/data/db \
+  mongo:7.0-jammy
+sudo docker exec open5gs-mongo mongosh --quiet --eval 'db.adminCommand({ping: 1})'
+```
+
+Require `{ ok: 1 }`. Preserve an existing container and `open5gs-mongo-data`; do not replace them to repair an unrelated subscriber or registration problem. SIM credentials remain in the local administrative workflow, outside Git.
+
+## 6. Open5GS packages and installed environment
+
+The deployment uses Ubuntu arm64 binary packages, rather than a local Open5GS source build. The [Open5GS quickstart](https://open5gs.org/open5gs/docs/guide/01-quickstart/) describes its Ubuntu package installation and systemd integration.
+
+`[SPARK]` On a new host:
+
+```bash
+sudo add-apt-repository ppa:open5gs/latest
+sudo apt update
+sudo apt install --no-install-recommends open5gs
+dpkg-query -W open5gs
+```
+
+The recorded version is `2.8.0~noble5`; the PPA may now provide a different version. Package installation can start systemd services. Use the full runbook to select the required SA services and to stop installed optional/legacy functions.
+
+| Installed location | Purpose |
+|---|---|
+| `/etc/open5gs/*.yaml` | Core network-function configuration |
+| `/usr/bin/open5gs-*` | Packaged network-function executables |
+| `/usr/lib/systemd/system/open5gs-*.service` | Service definitions |
+| `/etc/systemd/network/99-open5gs.netdev` | Persistent ogstun TUN definition |
+| `/etc/systemd/network/99-open5gs.network` | ogstun addressing, routes and MTU |
+
+`[SPARK]`
+
+```bash
+ls /etc/open5gs
+systemctl cat open5gs-amfd open5gs-smfd open5gs-upfd
+cat /etc/systemd/network/99-open5gs.netdev /etc/systemd/network/99-open5gs.network
+```
+
+The inspected `.netdev` defines `Name=ogstun`, `Kind=tun`. The `.network` matches ogstun and configures IPv4/IPv6 addresses and routes, with `MTUBytes=1400`; the UPF service requests `systemd-networkd`. Verify these files on another host before runtime startup.
+
+PLMN alignment across NRF/AMF, the subscriber database, and IPv4 session selection are covered in the configuration record and runbook. WebUI is an optional administration component; an existing WebUI installation is not evidence that all runtime SA functions are ready.
+
+## 7. UE laptop software and Quectel drivers
+
+### 7.1 Install userspace tools
+
+`[LAPTOP]`
+
+```bash
+uname -r
+cat /etc/os-release
+sudo apt update
+sudo apt install -y modemmanager libqmi-utils minicom iproute2 iperf3 usbutils
+sudo systemctl enable --now ModemManager
+mmcli --version
+qmicli --version
+minicom --version
+```
+
+ModemManager manages the modem and bearers, libqmi-utils supplies QMI queries, and minicom provides an interactive AT terminal. These tools supplement the laptop's kernel drivers; their installation alone does not ensure that every USB interface binds correctly.
+
+### 7.2 Kernel driver responsibilities
+
+| Linux driver | Interface/function in the recorded QMI setup |
+|---|---|
+| `option` | USB serial ports, including AT-capable `ttyUSB*` ports |
+| `qmi_wwan` | Modem network interface, historically `wwan0` |
+| `cdc_wdm` | QMI control device, exposed as `/dev/cdc-wdm*` |
+
+These roles are implemented by the upstream [USB serial option driver](https://raw.githubusercontent.com/torvalds/linux/master/drivers/usb/serial/option.c) and [QMI WWAN driver](https://raw.githubusercontent.com/torvalds/linux/master/drivers/net/usb/qmi_wwan.c). The working experiment used these drivers; no custom Quectel kernel patch was recorded.
+
+`[LAPTOP]` Connect the RMU500EK/RM500Q and inspect enumeration:
+
+```bash
+lsusb
+lsusb -t
+ls -l /dev/ttyUSB* /dev/cdc-wdm* 2>/dev/null || true
+ip -br link | grep -E 'wwan|rmnet' || true
+mmcli -L
+modinfo option
+modinfo qmi_wwan
+modinfo cdc_wdm
+sudo journalctl -k --since '5 minutes ago' --no-pager | grep -Ei 'usb|quectel|ttyUSB|qmi|cdc.wdm|disconnect'
+```
+
+Expected device ID is `2c7c:0800` for the recorded USB composition. Historical AT ports were ttyUSB2/ttyUSB3, QMI was cdc-wdm2, and the network port was wwan0. Discover actual ports on each laptop; ModemManager identifies their roles. A diagnostic/GNSS ttyUSB port is not automatically an AT port.
+
+If a module is available but not loaded, load it and reconnect the modem:
+
+`[LAPTOP]`
+
+```bash
+sudo modprobe option
+sudo modprobe qmi_wwan
+sudo modprobe cdc_wdm
+```
+
+If `modinfo` reports a missing module, inspect that laptop's matching kernel-module packages and kernel configuration first. A module being present does not prove that its USB ID/interface matching supports the selected modem composition. Inspect `lsusb -t` and kernel messages before installing vendor drivers, changing USB composition, or adding device IDs manually.
+
+### 7.3 Firmware and access issues encountered
+
+The tested firmware is `RM500QGLABR13A03M4G`. Older `AT+QCFG="nwscanmode"` / `AT+QCFG="band"` commands returned ERROR; the working preference commands use `QNWPREFCFG`. This was a firmware-command difference, not proof of a Linux driver fault. The full runbook contains the tested NR/SA configuration sequence.
+
+Repeated USB disconnects require inspection of cables, power, enumeration and modem state. The record did not isolate a universal cause or establish a required autosuspend change. After a modem reboot, rediscover IDs and ports. QMI queries alongside ModemManager use proxy mode (`qmicli -p`), and concurrent programs must not hold the same AT port.
+
+## 8. Installation and environment issue log
+
+| Issue or observation | Evidence/status | Recorded resolution or next diagnostic |
+|---|---|---|
+| B210 access denied during environment inspection | Host permissions and execution restrictions must be distinguished | Inspect packaged udev rules; compare normal/privileged host access and sandbox restrictions |
+| B210 connected through a 480M path | USB transport does not match the working baseline | Inspect cable/hub/port and establish USB 3 / 5000M |
+| Compiler choice | Clang 18 successfully produced the current OCUDU binaries | Set per-build CMake compiler paths; retain default GCC |
+| `DU_SPLIT_TYPE` unused | Variable is not used by `release_26_04` | Build targets `ocu` and `odu_split_8` |
+| ZeroMQ library not found | Inspected build still supports the UHD radio implementation | No ZeroMQ dependency required for this B210 deployment |
+| Native MongoDB 8 failed | Observed on this Spark; complete failure mechanism not preserved | Retain MongoDB 7 arm64 Docker workaround |
+| RM500Q ports renamed after reconnect/reboot | Port numbers and modem IDs changed | Rediscover ports and their roles rather than reuse historical paths |
+| Older Quectel preference commands returned ERROR | Tested firmware accepted QNWPREFCFG instead | Use the recorded firmware-compatible commands in the runbook |
+| RAN scheduling warnings / recurring RF errors | Runtime privilege/performance issue after successful installation | Recorded performance script and privileged launch; sustained stability remains open |
+
+A successful build or driver probe does not establish SA registration or a usable PDU session. The 2026-10-05 NRF PLMN, subscriber, IPv4v6 and WWAN issues are documented separately in the dated debug record.
+
+## 9. Installation completion record
+
+- [ ] Spark OS, kernel, architecture and compiler versions recorded.
+- [ ] UHD packages and matching images present; stopped-radio probe detects B210 over USB 3.
+- [ ] OCUDU revision, compiler and CMake options recorded; CU/DU binaries exist with resolved libraries.
+- [ ] Docker available; existing MongoDB 7 container/volume retained or created on a new host.
+- [ ] Open5GS package version, service files and persistent TUN configuration inspected.
+- [ ] UE laptop detects the modem's AT, QMI and network interfaces with the expected drivers.
+
+Continue with the [Full Reproduction Runbook](full_reproduction_runbook.md) after these prerequisites are satisfied. Future FlexRIC, AI/CUDA development, and MPTCP application tooling need their own installation records when implemented.

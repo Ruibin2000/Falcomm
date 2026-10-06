@@ -1,6 +1,18 @@
 # Falcomm
 
-Falcomm is a 5G/AI-RAN experimental platform based on the NVIDIA DGX Spark. The project combines a dual-path UE setup, two over-the-air radio links, a two-cell RAN and 5G core, FlexRIC, and an MPTCP server to study path steering using RAN measurements. The present implementation baseline uses OCUDU and Open5GS; the target architecture also allows an OAI-based RAN.
+Falcomm is a 5G/AI-RAN experimental platform based on the NVIDIA DGX Spark. **As of 2026-10-05, one private 5G SA link has carried application traffic between a Linux laptop with a Quectel RM500Q and the Spark through a USRP B210, OCUDU and Open5GS.** The longer-term objective is dual independent radio paths with FlexRIC telemetry, AI channel/rate prediction, and MPTCP video steering.
+
+**Start here: [Full Reproduction Runbook](docs/full_reproduction_runbook.md)** — restart the installed Spark infrastructure, configure the RMU500EK/RM500Q on a new Ubuntu laptop, register, establish IPv4 data, configure WWAN, test local traffic and shut down. [Troubleshooting and the 2026-10-05 debug record](docs/troubleshooting/2026-10-05_sa_bringup.md) explain the repaired failures.
+
+## Verified Single-Link Architecture
+
+```text
+Linux laptop application ↔ WWAN ↔ RMU500EK / RM500Q-GL
+    ↔ NR SA n78 ↔ B210 (3271233) ↔ OCUDU DU1
+    ↔ F1 ↔ OCUDU CU ↔ N3 ↔ Open5GS UPF ↔ ogstun ↔ Spark application
+```
+
+CU-to-AMF N2 carries access signalling; SMF controls the UPF over N4/PFCP. The tested application endpoints are Spark `10.45.0.1` and the current UE allocation in `10.45.0.0/16`. Management Wi-Fi is separate. The local experiment does not require Internet NAT or changing the laptop's Wi-Fi default route.
 
 ## Target Architecture
 
@@ -49,7 +61,7 @@ flowchart LR
     Up <-->|approximately 7 GHz OTA| Link3
 ```
 
-The FR1 path operates over the air at 3.5 GHz. For the FR3 path, Pi-Radio units upconvert the UE-side 3.5 GHz signal to approximately 7 GHz for the OTA link and downconvert it at the network side. FlexRIC xApps use RAN measurements to inform MPTCP path steering. The current verified radio configuration remains a single OCUDU DU and B210 operating at 3.75 GHz; the two-path topology shown here is the project target, not a completed deployment.
+The future FR1/FR3 diagram uses nominal 3.5 GHz equipment interfaces and an approximately 7 GHz converted OTA path. The verified single-link radio operates at **3.75 GHz**. Pi-Radio frequency conversion, the second path, FlexRIC/xApps and MPTCP steering remain future work. The working RAN is OCUDU with Open5GS; the OAI label in the concept diagram is an alternative implementation, not part of the current deployment.
 
 ### Network-Side Implementation: OCUDU, Open5GS, and FlexRIC
 
@@ -95,19 +107,13 @@ flowchart LR
     B2 <-->|USB 3 and UHD| DU2
 ```
 
-In the target system, E2 carries RAN measurements to FlexRIC, and the xApp provides path-steering input to the server application. The application coordinates with the MPTCP server, which exchanges user traffic with the UE through the 5G core. This is a target design; only the single-DU N2/F1 connectivity described in the current-status section has been verified.
+In the target system, E2 carries DU/RAN measurements to FlexRIC, and the xApp provides path-steering input to the server application and MPTCP controller. The diagram describes the future two-path implementation. The single-DU chain has now been verified through SA registration, IPv4 PDU setup and initial application traffic, as described below.
 
 ## Current Status
 
-As of **2026-10-02**, the DGX Spark baseline, UHD/B210 #1, OCUDU build, and basic connectivity among one CU, one DU, and Open5GS have been verified. N2 (CU-to-AMF) and F1 (CU-to-DU) associations have been established, and DU1 has operated B210 #1 through UHD.
+The reported **2026-10-05** session verified private SSB detection, PRACH/PUSCH with CRC OK and strong uplink SINR, SA registration/authentication, attached packet service, IPv4 PDU/IP allocation, a connected bearer and manually configured WWAN. The first 10-second TCP uplink test reported **6.29 Mbit/s sender, 5.09 Mbit/s receiver, 0 sender retransmissions**. This is a functional user-plane result; throughput and sustained realtime operation are not yet characterized.
 
-The currently verified topology is:
-
-```text
-MongoDB 7 (Docker) → Open5GS → OCUDU CU → OCUDU DU1 → UHD → USRP B210 #1
-```
-
-UE subscriber provisioning and attachment, the second DU/B210, real-time tuning, FlexRIC/xApp, dual-path MPTCP, and AI-based proactive path selection remain future work. See [Project Progress](01_project_progress.md) for phase-level status.
+Confirmed repairs were NRF serving PLMN `999/70` → `001/01`, provisioning the missing subscriber, reliable NR/SA private-cell selection, subscriber session type 3 (IPv4v6) → type 1 (IPv4) after OCUDU rejection, host performance tuning, and static WWAN configuration. RX gain 40 was validated by successful uplink access. See [Project Progress](docs/project_progress_and_configuration.md) and the [chronological debug record](docs/troubleshooting/2026-10-05_sa_bringup.md).
 
 ## Platform and Software Versions
 
@@ -119,32 +125,56 @@ UE subscriber provisioning and attachment, the second DU/B210, real-time tuning,
 | Open5GS | `2.8.0~noble5` |
 | MongoDB | Docker image `mongo:7.0-jammy` (arm64) |
 | Radio interface | Ettus B210 #1, UHD `4.6.0.0`; ZeroMQ is not used in the current deployment |
+| Verified radio settings | n78, carrier ARFCN 650000 / 3750 MHz, SSB ARFCN 649632, 20 MHz, 30 kHz, TX gain 80 / RX gain 40 |
+| UE | RMU500EK / RM500QGL_VH, firmware `RM500QGLABR13A03M4G` |
+| Private session | PLMN `00101`, TAC 7, SST 1, DNN `internet`, IPv4 only |
 | MPTCP | Supported by the NVIDIA kernel; `net.mptcp.enabled = 1` |
 
 Versions and runtime results above are drawn from the deployment records. FlexRIC, the xApp, and the AI control path have not yet been deployed.
 
 ## Document Index
 
-- [Project Progress and System Configuration](01_project_progress.md): target architecture, phase status, software versions, and CU/DU and Open5GS configuration records.
-- [Operational Command Reference](02_operation_commands.md): service startup and shutdown, CU/DU launch, link checks, and routine operations.
-- [Reproducible Installation Procedure](03_reproducible_installation_steps.md): steps to reproduce the completed deployment on a clean DGX Spark system.
-- [Development Handoff](04_codex_handoff_prompt.md): environment constraints, known status, and working procedures for continued development.
+```text
+README.md
+docs/
+├── project_progress_and_configuration.md
+├── software_installation_and_drivers.md
+├── full_reproduction_runbook.md
+├── development_handoff.md
+└── troubleshooting/
+    └── 2026-10-05_sa_bringup.md
+```
+
+| Document | Purpose |
+|---|---|
+| [Project Progress and System Configuration](docs/project_progress_and_configuration.md) | Verified architecture, phase status, configuration values and remaining work |
+| [Software Installation, Drivers, and OCUDU Environment](docs/software_installation_and_drivers.md) | Software dependencies, drivers, compiler/build environment and installation issues |
+| [Full Reproduction Runbook](docs/full_reproduction_runbook.md) | Startup, laptop setup, registration, IPv4 data, traffic and shutdown commands |
+| [5G SA Bring-up Debug Record, 2026-10-05](docs/troubleshooting/2026-10-05_sa_bringup.md) | Dated evidence, confirmed repairs and troubleshooting decision tree/matrix |
+| [Development Handoff](docs/development_handoff.md) | Working constraints and next steps for continued development |
+
+New members should read the project overview and configuration first, prepare missing software using the installation guide, then follow the runbook. Consult the dated debug record when a stage fails and the handoff document before extending the system. Keep the runbook as the single operating procedure; future experiment records use `docs/troubleshooting/YYYY-MM-DD_topic.md`.
 
 ## Quick Start
 
-The full startup sequence and verification commands are provided in the [Operational Command Reference](02_operation_commands.md). The high-level sequence is:
+Follow the [Full Reproduction Runbook](docs/full_reproduction_runbook.md) one stage at a time:
 
-1. Start the MongoDB Docker container and Open5GS services.
-2. Start the CU from `~/ocudu`: `build/apps/cu/ocu -c configs/cu.yml`.
-3. Verify B210 availability, then start the DU: `build/apps/du_split_8/odu -c configs/du1_b210_n78_20mhz.yml`.
-4. Check AMF N2, CU/DU F1-C connectivity, and DU/UHD logs.
+1. Check B210/USB 3 while DU is stopped; apply and verify the recorded OCUDU performance settings.
+2. Start/check MongoDB, verify the exact subscriber is IPv4-only, and align NRF/AMF PLMN.
+3. Start the ten required SA services and verify AMF/PFCP/ogstun.
+4. Launch CU and DU with `sudo` in separate foreground terminals; verify N2, F1 and GTP-U.
+5. Configure the laptop modem for NR SA/private SSB, establish IPv4 data, and apply the actual active bearer's host settings.
+6. Test local private traffic and record RF-error growth. Shutdown applications and PDU first, then DU, CU and core.
 
-Before operation, verify that local configuration files and device state match the [Operational Command Reference](02_operation_commands.md). The current DU configuration transmits at approximately **3.75 GHz**. Operate only at an authorized frequency, location, and power level. Do not run UHD probes or benchmarks that access the B210 while the DU is using it.
+Before operation, verify that local configuration files and device state match the [Full Reproduction Runbook](docs/full_reproduction_runbook.md). The current DU configuration transmits at approximately **3.75 GHz**. Operate only at an authorized frequency, location, and power level. Do not run UHD probes or benchmarks that access the B210 while the DU is using it.
 
 The current Falcomm over-the-air chain uses **UHD and a USRP B210**. ZeroMQ settings in upstream RIC tutorials describe a software-radio example and are not part of this deployment. FlexRIC validation should enable E2 on the existing UHD/DU configuration.
 
 ## Scope and Limitations
 
-- The verified configuration covers one DU and one B210; UE registration and end-to-end data service have not been demonstrated.
+- The verified configuration covers one DU, one B210 and one RM500Q with an initial IPv4 TCP uplink result. Cold-start/new-laptop reproduction, longer uplink, downlink, UDP loss/jitter and video are still validation tasks.
 - The 30.72 MS/s, 20-s UHD benchmark is a radio/USB stress test. The current OCUDU configuration uses a 23.04 MS/s sample rate.
 - The NVIDIA kernel, PREEMPT_RT status, and system-default GCC configuration are retained to preserve the reproducible baseline.
+- `ocudu_performance` and privileged RAN launch were applied. Recurring RF failures improved; long-duration stability is still open.
+- Runtime modem/bearer/AT/QMI/WWAN identifiers and UE IPv4 can change. Query them rather than reusing example IDs or addresses.
+- SIM authentication secrets, authentication vectors and derived RAN keys must remain outside Git. INFO logs require sanitization before sharing.
