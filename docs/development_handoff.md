@@ -1,12 +1,12 @@
 # Development Handoff
 
-Updated: 2026-10-07. Continue from the working **single-link 5G SA IPv4 baseline with FlexRIC E2/KPM subscription verified**. Read [Progress and Configuration](project_progress_and_configuration.md), the [Full Reproduction Runbook](full_reproduction_runbook.md), and the [FlexRIC record](troubleshooting/2026-10-07_flexric_bringup.md). Daily commands are summarized separately for [Spark](spark_quick_commands.md) and the [UE laptop](ue_laptop_quick_commands.md).
+Updated: 2026-10-07. Continue from the working **single-link 5G SA IPv4 baseline with actual UE KPM reception through FlexRIC verified**. Read [Progress and Configuration](project_progress_and_configuration.md), the [Full Reproduction Runbook](full_reproduction_runbook.md), and the [FlexRIC record](troubleshooting/2026-10-07_flexric_bringup.md). Daily commands are summarized separately for [Spark](spark_quick_commands.md) and the [UE laptop](ue_laptop_quick_commands.md).
 
 ## Achieved and pending
 
 The reported experiment established private n78 detection, PRACH/PUSCH CRC OK, SA registration/authentication, packet attachment, IPv4 PDU setup, a connected static bearer, manually configured WWAN, and laptop-to-Spark application traffic. The first 10-second TCP uplink was sender 6.29 Mbit/s / receiver 5.09 Mbit/s, sender Retr 0. Sustained throughput, downlink, UDP and live video are not yet validated.
 
-The 2026-10-07 session added FlexRIC, verified DU E2 Setup, and completed the C KPM xApp subscription and deletion. Actual UE KPM reports remain the immediate acceptance task, followed by cold-start/new-laptop reproducibility and traffic characterization. Dual FR1/FR3 paths, AI prediction and MPTCP steering remain future work; freeze the single-link baseline before adding a second path or active steering.
+The 2026-10-07 session added FlexRIC, verified DU E2 Setup, and completed the C KPM xApp subscription and deletion. A later run received all five actual DU metrics for UE F1AP ID `14`: selected UL throughput samples were 14.163–14.675 Mbit/s at the RLC measurement layer, with UL PRB usage 86%. Next acceptance work is synchronized KPM/application traffic correlation, cold-start/new-laptop reproducibility and traffic characterization. Dual FR1/FR3 paths, AI prediction and MPTCP steering remain future work; freeze the single-link baseline before adding a second path or active steering.
 
 ## Stable infrastructure facts
 
@@ -56,8 +56,8 @@ Private QSCAN and PUSCH CRC OK at 20–33 dB SINR established usable downlink ac
 
 ## Next session
 
-Connect the RM500Q and generate private traffic, then start the approximately 10-second C KPM xApp and verify actual UE IDs and measurement values. Continue with cold-start/new-laptop reproduction → 30–60-second TCP uplink → TCP downlink → UDP 2/4/6/8/10 Mbit/s → jitter/loss and DU-error observation → camera/video and latency/QoE → freeze Single-Link Baseline v1 → second path → MPTCP → AI predictor → active steering → blockage/QoE comparison.
+Repeat the approximately 10-second C KPM xApp during a measured private traffic run, recording current UE ID, direction, application rate, duration and report timing together. Initial real UE metric reception is already verified. Continue with cold-start/new-laptop reproduction → 30–60-second TCP uplink → TCP downlink → UDP 2/4/6/8/10 Mbit/s → jitter/loss and DU-error observation → camera/video and latency/QoE → freeze Single-Link Baseline v1 → second path → MPTCP → AI predictor → active steering → blockage/QoE comparison.
 
-The example's printed `KPM ... ind_msg latency` is not an accepted transport-latency measurement for this OCUDU: its timestamp conversion must account for OCUDU's NTP fixed-point collection timestamp. Keep this separate from validating actual metric reception.
+The original example's huge negative `KPM ... ind_msg latency` is invalid. The [timestamp repair](troubleshooting/2026-10-07_flexric_latency_fix.md) is applied to local FlexRIC source, rebuilt, tested and installed; do not discard these local source changes when switching commits. It normalizes v3 ASN timestamps to Unix microseconds and prints signed `report_age_us`. Installed KPM library and `xapp_oran_moni` match the repaired build. An isolated subscription passed without UE indications; live UE report-age verification remains pending. Follow [Spark step 7a](spark_quick_commands.md#7a-时间戳修复安装后复验): keep CU/DU/RIC running, start UE traffic, then immediately run the new approximately 10-second xApp and require report age, actual UE ID and normal exit together. `DRB.RlcSduDelayDl` has its own 0.1 ms unit: 15.80–17.30 means 1.580–1.730 ms of RLC SDU delay.
 
 Use the [Full Reproduction Runbook](full_reproduction_runbook.md) for operating commands and [Software Installation, Drivers, and OCUDU Environment](software_installation_and_drivers.md) for dependencies, driver inspection, compiler/build settings, and installation issues.

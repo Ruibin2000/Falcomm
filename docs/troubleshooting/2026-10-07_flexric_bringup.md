@@ -1,6 +1,6 @@
 # FlexRIC integration on Spark
 
-Date: **2026-10-07**. OCUDU DU1 connected to FlexRIC over E2, and the C KPM xApp completed subscription, deletion and normal exit. **Actual UE KPM reports remain pending.** The 2026-10-05 UE traffic result remains the application-data baseline.
+Date: **2026-10-07**. OCUDU DU1 connected to FlexRIC over E2, and the C KPM xApp completed subscription, deletion and normal exit. **A subsequent run received all five actual UE KPM measurements for gNB-DU UE F1AP ID `14`.** The 2026-10-05 UE traffic result remains the application-data baseline; no new synchronized application benchmark accompanied the KPM excerpt.
 
 ## Working configuration
 
@@ -84,16 +84,34 @@ Test xApp run SUCCESSFULLY
 
 RIC remained running and handled subscription deletion. The monitor's approximately 10-second observation window and subsequent exit are expected for this revision.
 
+## Actual UE KPM reception
+
+The operator then captured repeated reports from E2 node `411`, type `ngran_gNB_DU`, with `UE ID type = gNB-DU, gnb_cu_ue_f1ap = 14`. Selected consecutive reports contained:
+
+| Metric | First sample | Second sample | Unit and interpretation |
+|---|---|---|---|
+| `DRB.RlcSduDelayDl` | 17.30 | 15.80 | 0.1 ms; **1.730 / 1.580 ms** RLC SDU delay |
+| `DRB.UEThpDl` | 253.00 | 242.00 | kbps; **253 / 242 kbps** RLC-derived throughput |
+| `DRB.UEThpUl` | 14163.00 | 14675.00 | kbps; **14.163 / 14.675 Mbit/s** RLC-derived throughput |
+| `RRU.PrbTotDl` | 0 | 0 | Integer percentage; **0%** reported |
+| `RRU.PrbTotUl` | 86 | 86 | Integer percentage; **86%** reported |
+
+This establishes live UE metric reception through DU → E2 → RIC → xApp. The captured xApp log also ended with `Test xApp run SUCCESSFULLY`. UE ID `14` is an observation, not a fixed identifier for later runs. The configured period is 1000 ms; the pasted excerpt has no receive timestamps to verify precise cadence. It also lacks synchronized iperf direction, duration and sender/receiver results.
+
+Units were checked against the existing OCUDU source in `lib/e2/e2sm/e2sm_kpm/e2sm_kpm_metric_defs.h` and provider formulas in `e2sm_kpm_du_meas_provider_impl.cpp`. Throughput uses RLC PDU byte counters, so it does not establish application goodput. The delay is an RLC SDU measurement, not RTT. DL PRB usage can round down to zero while small DL throughput remains: the per-UE PRB formula uses integer division, and scheduler/RLC samples come from separate reports. These samples do not isolate which effect produced the zero.
+
+The same excerpt printed huge negative `KPM-v3 ind_msg latency` values, including `-938098313332490154 μs`. This is an invalid timestamp display. OCUDU's `e2sm_kpm_report_service_impl.cpp` sends a 64-bit NTP fixed-point collection timestamp. FlexRIC's original KPM decoder uses `ntohll` with incorrect 32-bit half ordering on this little-endian host; `examples/xApp/c/monitor/xapp_oran_moni.c` then subtracts the result from Unix microseconds. A subsequent [timestamp repair](2026-10-07_flexric_latency_fix.md) normalizes NTP bytes to Unix microseconds and labels the signed display `report_age_us`. Source, build and offline tests passed; an isolated live subscription also passed without UE indications. Installed KPM library and `xapp_oran_moni` now match the repaired build; live UE report-age verification remains pending. The quick metric summary omits the old invalid display.
+
 ## Next acceptance and diagnostics
 
-Connect the RM500Q using the existing IPv4 procedure, generate private traffic, and run the Spark xApp during that traffic. Require actual gNB-DU UE IDs, metric values and the expected report cadence. The current successful run proves subscription lifecycle, not actual UE throughput telemetry.
+Repeat the RM500Q private traffic test and Spark xApp together, recording current UE ID, application direction, duration, rate, report timing and DU RF-error growth. Initial actual UE KPM reception is now verified; synchronized traffic correlation, precise cadence and sustained stability remain acceptance work.
 
 Keep these runtime details in mind:
 
 - CU and RIC must be available before DU. E2 Setup waits for F1 component data; restarting RIC requires restarting DU for a fresh E2 association.
 - RLC metrics must be enabled for the UE reports used here. Without an eligible UE, subscription can succeed without periodic indications.
 - `log.all_level` does not override the separate E2AP logger default. Set only `log.e2ap_level: debug` when more E2 evidence is needed, then restart DU after RIC.
-- The example's printed KPM indication latency subtracts its collection timestamp as Unix microseconds, while this OCUDU uses an NTP fixed-point timestamp. That display requires conversion correction before being used as a latency result.
+- Install the tested timestamp repair before interpreting the new `report_age_us` display. It includes processing and queueing, and is not pure transport latency; see the repair record.
 - The current provider accepts the example's S-NSSAI condition without enforcing a slice filter. Do not treat its output as validated per-slice isolation.
 
 Use narrow E2/KPM excerpts when diagnosing failures; keep authentication material and complete RAN INFO logs outside Git. Stop traffic/xApp and the laptop PDU first, then DU, RIC, CU and core; preserve MongoDB data.

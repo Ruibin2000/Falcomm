@@ -1,6 +1,6 @@
 # Project Progress and System Configuration
 
-Last updated: **2026-10-07**. The 2026-10-05 session established initial UE application traffic. The 2026-10-07 session installed FlexRIC and verified E2 Setup plus KPM subscription/deletion on the existing UHD DU. Actual UE KPM reports and cold-start/new-laptop data reproduction remain pending.
+Last updated: **2026-10-07**. The 2026-10-05 session established initial UE application traffic. The 2026-10-07 session installed FlexRIC and verified E2 Setup, actual UE KPM reports and subscription/deletion on the existing UHD DU. Cold-start/new-laptop data reproduction and synchronized traffic characterization remain pending.
 
 ## Current verified single-link architecture
 
@@ -24,13 +24,13 @@ flowchart LR
         SMF <-->|N4 PFCP| UPF
         UPF <-->|Local data-network IP path| TUN
         TUN <--> App
-        DU <-->|E2 Setup and subscription verified| RIC
-        RIC <-->|KPM subscription verified| XAPP
+        DU <-->|E2 and UE KPM reports verified| RIC
+        RIC <-->|UE KPM reception verified| XAPP
     end
     B210 <-->|USB 3 / UHD| DU
 ```
 
-The tested application path is **laptop ↔ Spark over private 5G**. Management Wi-Fi (observed Spark address `10.20.44.26` on `wlP9s9`) is separate. Public Internet connectivity, NAT and a replacement laptop default route are outside this baseline. FlexRIC now connects to DU1; the two-path FR1/FR3, actual UE telemetry, AI and MPTCP design remains in the [README target architecture](../README.md#target-architecture).
+The tested application path is **laptop ↔ Spark over private 5G**. Management Wi-Fi (observed Spark address `10.20.44.26` on `wlP9s9`) is separate. Public Internet connectivity, NAT and a replacement laptop default route are outside this baseline. FlexRIC receives actual UE telemetry from DU1; the two-path FR1/FR3, AI and MPTCP design remains in the [README target architecture](../README.md#target-architecture).
 
 ## Phase status
 
@@ -43,10 +43,10 @@ The tested application path is **laptop ↔ Spark over private 5G**. Management 
 | 4 | RM500Q SA registration, authentication, IPv4 PDU, WWAN, local data | Verified in initial session |
 | 5 | Second DU / second radio / second UE | Future work |
 | 6 | Host realtime work | Performance script and privileged launch applied; sustained stability open |
-| 7–8 | FlexRIC / KPM xApp | Installed; E2 Setup, KPM subscription and deletion verified; real UE reports pending |
+| 7–8 | FlexRIC / KPM xApp | Installed; E2 Setup, actual UE reports, KPM subscription and deletion verified |
 | 9–11 | MPTCP / RIC-assisted control / AI steering | Future work |
 
-Next, validate UE KPM reports during private traffic, reproduce the single-link result after a cold start and on the new laptop, characterize traffic and freeze Baseline v1 before adding the second path or active steering.
+Next, correlate KPM with synchronized application traffic, reproduce the single-link result after a cold start and on the new laptop, characterize traffic and freeze Baseline v1 before adding the second path or active steering.
 
 ## Platform and prior build evidence
 
@@ -110,7 +110,7 @@ log:
   all_level: info
 ```
 
-TX gain 80 / RX gain 40 is the verified 2026-10-05 traffic baseline; early gain 10/20 experiments are historical. The actual base file inspected on 2026-10-07 has **TX 70 / RX 40**; the E2 overlay changes neither gain. This session validated RAN/E2 startup and subscription at the current settings, without a new UE traffic result. Preserve the actual file and record its gain for each experiment rather than silently restoring 80. Gain is not calibrated transmit power. PRACH and PUSCH CRC OK with 20–33 dB SINR established RX 40 in the earlier session. MAC/F1 captures remain disabled and no explicit `otw_format` is present.
+TX gain 80 / RX gain 40 is the verified 2026-10-05 traffic baseline; early gain 10/20 experiments are historical. The actual base file inspected on 2026-10-07 has **TX 70 / RX 40**; the E2 overlay changes neither gain. This session validated RAN/E2 startup, subscription and actual UE KPM reception at the current settings, without a new synchronized application throughput benchmark. Preserve the actual file and record its gain for each experiment rather than silently restoring 80. Gain is not calibrated transmit power. PRACH and PUSCH CRC OK with 20–33 dB SINR established RX 40 in the earlier session. MAC/F1 captures remain disabled and no explicit `otw_format` is present.
 
 | Radio parameter | Value |
 |---|---|
@@ -192,7 +192,7 @@ The existing OCUDU binary already contains E2 support; `ENABLE_EXPORT` controls 
 | KPM function / action / period | RAN function ID `2`, Format 4, 1000 ms |
 | DU measurement names | `DRB.RlcSduDelayDl`, `DRB.UEThpDl`, `DRB.UEThpUl`, `RRU.PrbTotDl`, `RRU.PrbTotUl` |
 
-The default xApp config also lists monolithic gNB/CU and RC subscriptions; the RAN-type checks select only the DU KPM block for this node. The `73650812` example runs for about 10 seconds, deletes its subscription and exits normally. A successful subscription alone does not establish actual UE measurements. See [runtime steps](full_reproduction_runbook.md#9a-prepare-the-du-e2-overlay) and the [dated record](troubleshooting/2026-10-07_flexric_bringup.md).
+The default xApp config also lists monolithic gNB/CU and RC subscriptions; the RAN-type checks select only the DU KPM block for this node. The `73650812` example runs for about 10 seconds, deletes its subscription and exits normally. A later run received all five metrics for actual gNB-DU UE F1AP ID `14`. Selected samples show `DRB.UEThpUl` 14163–14675 kbps, `DRB.UEThpDl` 242–253 kbps, `DRB.RlcSduDelayDl` 15.80–17.30 in 0.1 ms units, and UL/DL PRB usage 86%/0%. UE IDs can change. The original indication latency is invalid because of timestamp decoding/conversion; the [repair](troubleshooting/2026-10-07_flexric_latency_fix.md) is built, tested and installed, with live UE time verification pending. See [runtime steps](full_reproduction_runbook.md#9a-prepare-the-du-e2-overlay) and the [dated record](troubleshooting/2026-10-07_flexric_bringup.md) for metric interpretation.
 
 ### Open5GS identity, sessions and interfaces
 
@@ -244,7 +244,7 @@ The first 10-second TCP uplink reported sender 7.50 MBytes / 6.29 Mbit/s / Retr 
 
 Confirmed repairs: NRF `999/70` → `001/01`; missing subscriber provisioned; private SA cell selection/lock; subscriber type 3 → 1 after IPv4v6 rejection; host performance improvements; actual static WWAN settings applied. See the [chronological troubleshooting record](troubleshooting/2026-10-05_sa_bringup.md) for evidence and ruled-out hypotheses.
 
-The **2026-10-07 FlexRIC session** verified all ten SA services active, CU N2 connected, DU F1 connected, E2 Setup accepted and KPM function ID 2 registered. After the codec update, the xApp reported `SUBSCRIPTION RESPONSE rx` and `Successfully subscribed to RAN_FUNC_ID 2`, followed by subscription deletion and `Test xApp run SUCCESSFULLY`. No actual UE KPM indications were shown in this run. Offline tests with synthetic messages checked new FlexRIC Format 4 subscriptions against the existing OCUDU decoder and OCUDU Format 3 indications against the new FlexRIC decoder; these are codec tests, not UE measurements.
+The **2026-10-07 FlexRIC session** verified all ten SA services active, CU N2 connected, DU F1 connected, E2 Setup accepted and KPM function ID 2 registered. After the codec update, the xApp completed subscription and deletion. A subsequent run received repeated actual gNB-DU UE ID `14` reports containing all five metrics and exited with `Test xApp run SUCCESSFULLY`. Traffic direction, application rate and duration were not recorded alongside these KPM excerpts, so they do not replace the 2026-10-05 application benchmark. Separate offline tests with synthetic messages checked new FlexRIC Format 4 subscriptions against the existing OCUDU decoder and OCUDU Format 3 indications against the new FlexRIC decoder.
 
 ## Host performance and remaining work
 
@@ -252,6 +252,6 @@ The **2026-10-07 FlexRIC session** verified all ten SA services active, CU N2 co
 
 Kernel replacement, PREEMPT_RT, boot parameters, CPU isolation, IRQ pinning and hugepage changes were not part of this repair. Earlier privilege warnings alone were non-blocking; recurring RF realtime failures required host tuning. Check runtime settings after reboot and monitor sustained error growth.
 
-Next sequence: real UE KPM reports during private traffic → cold-start/new-laptop reproduction → 30–60-second uplink → downlink → UDP 2/4/6/8/10 Mbit/s and jitter/loss → video/latency/QoE → freeze Single-Link Baseline v1 → second independent path → independent path verification → MPTCP → AI predictor/steering → blockage/QoE experiments.
+Next sequence: synchronized KPM/application traffic correlation → cold-start/new-laptop reproduction → 30–60-second uplink → downlink → UDP 2/4/6/8/10 Mbit/s and jitter/loss → video/latency/QoE → freeze Single-Link Baseline v1 → second independent path → independent path verification → MPTCP → AI predictor/steering → blockage/QoE experiments.
 
 Follow the [Full Reproduction Runbook](full_reproduction_runbook.md), or its [Spark](spark_quick_commands.md) and [UE laptop](ue_laptop_quick_commands.md) command summaries. Shutdown order is traffic/xApp → PDU → laptop WWAN → DU → FlexRIC → CU → 5GC → optional MongoDB. Check runtime state before operation; keep SIM secrets and raw INFO logs out of Git.

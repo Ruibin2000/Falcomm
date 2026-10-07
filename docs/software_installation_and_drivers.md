@@ -367,7 +367,7 @@ Repeated USB disconnects require inspection of cables, power, enumeration and mo
 
 ## 8 FlexRIC installation on Spark
 
-FlexRIC is a separate Near-RT RIC project connected to OCUDU over E2. The tested revision is **`736508123fe4b5dc3db83fb5baf5f0a8e9b04fe8`** on `br-flexric`. Its standard KPM ASN.1 codec supports the tested Format 4 subscription and OCUDU Format 3 report encoding. The earlier pinned `1a3903a7` failed live subscription with OCUDU `050a2bb`; do not use that revision for this procedure. The [dated record](troubleshooting/2026-10-07_flexric_bringup.md) distinguishes offline codec tests from the successful live subscription.
+FlexRIC is a separate Near-RT RIC project connected to OCUDU over E2. The tested revision is **`736508123fe4b5dc3db83fb5baf5f0a8e9b04fe8`** on `br-flexric`. Its standard KPM ASN.1 codec supports the tested Format 4 subscription and OCUDU Format 3 report encoding. The earlier pinned `1a3903a7` failed live subscription with OCUDU `050a2bb`; do not use that revision for this procedure. The [dated record](troubleshooting/2026-10-07_flexric_bringup.md) distinguishes offline codec tests, successful live subscription and actual UE report reception.
 
 ### 8a Dependencies
 
@@ -449,6 +449,7 @@ Require identical hashes for the pair, not a fixed hash across builds. The runti
 | RAN scheduling warnings / recurring RF errors | Runtime privilege/performance issue after successful installation | Recorded performance script and privileged launch; sustained stability remains open |
 | KPM Format 4 decode failure and RIC assertion | Old `1a3903a7` compiled a modified KPM ASN.1 codec | Install `73650812` from `build-ocudu` with `KPM_V3_00`; live subscription/deletion then passed |
 | xApp exits after about 10 seconds | Expected behavior of the `73650812` C monitor example | Look for successful subscription, deletion response and `Test xApp run SUCCESSFULLY` |
+| Huge negative KPM indication latency | Timestamp word-order and NTP/Unix conversion problems | [Repair built/tested/installed](troubleshooting/2026-10-07_flexric_latency_fix.md); verify live UE `report_age_us` |
 
 A successful build or driver probe does not establish SA registration or a usable PDU session. The 2026-10-05 NRF PLMN, subscriber, IPv4v6 and WWAN issues are documented separately in the dated debug record.
 
@@ -462,4 +463,4 @@ A successful build or driver probe does not establish SA registration or a usabl
 - [ ] UE laptop detects the modem's AT, QMI and network interfaces with the expected drivers.
 - [ ] FlexRIC revision/options recorded; installed KPM library matches `build-ocudu` and configs reference the installed service directory.
 
-Continue with the [Full Reproduction Runbook](full_reproduction_runbook.md) or the [Spark](spark_quick_commands.md) and [UE laptop](ue_laptop_quick_commands.md) quick commands. Actual UE KPM reception, AI/CUDA development and MPTCP application tooling remain future validation/development work.
+Continue with the [Full Reproduction Runbook](full_reproduction_runbook.md) or the [Spark](spark_quick_commands.md) and [UE laptop](ue_laptop_quick_commands.md) quick commands. Actual UE KPM reception passed on 2026-10-07. The timestamp display repair is applied, built and installed; live UE time verification remains pending. Synchronized application/KPM characterization, AI/CUDA development and MPTCP application tooling remain future work.

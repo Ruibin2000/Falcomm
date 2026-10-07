@@ -2,7 +2,7 @@
 
 更新：2026-10-07。在 **UE laptop 的同一个 Bash 终端**按顺序执行，保留下面的变量；每步成功再继续。完整说明见 [复现手册第 10–14 节](full_reproduction_runbook.md#10-prepare-a-new-ubuntulinux-laptop)，Spark 启动见 [Spark 快速 CMD](spark_quick_commands.md)。
 
-2026-10-05 已验证单 UE 注册、IPv4 和初次 10 秒 TCP 上行；2026-10-07 已验证 DU 的 FlexRIC KPM 订阅，**真实 UE KPM 数据仍待验证**。以下 ping、30 秒上/下行是后续验收指令，不代表本次已测结果。
+2026-10-05 已验证单 UE 注册、IPv4 和初次 10 秒 TCP 上行；2026-10-07 已验证 DU 的 FlexRIC KPM 订阅，并收到 gNB-DU UE ID `14` 的五项真实测量值，xApp 正常退出。以下 ping、30 秒上/下行是后续验收指令，不代表本次已测结果。
 
 ## 1 首次安装与选择 modem
 
@@ -194,13 +194,15 @@ ping -q -I "$WWAN_IF" -c 5 10.45.0.1
 
 ```bash
 # 上行：UE → Spark，30 秒（待验证）
-iperf3 -c 10.45.0.1 -B "$UE_IP" -t 30 -i 0
+iperf3 -c 10.45.0.1 -B "${UE_IP:?请使用已配置WWAN的终端}" -t 30 -i 0
 
 # 下行：Spark → UE，30 秒（待验证）
-iperf3 -c 10.45.0.1 -B "$UE_IP" -R -t 30 -i 0
+iperf3 -c 10.45.0.1 -B "${UE_IP:?请使用已配置WWAN的终端}" -R -t 30 -i 0
 ```
 
-验证真实 UE KPM 时：**UE 先跑一次 30 秒流量，流量期间 Spark 在另一终端跑约 10 秒的 `xapp_oran_moni`**。Spark 需收到 UE ID 和 KPM 数值才算本阶段通过；仅 `Successfully subscribed` 不代表收到真实 UE 数据。两端记录方向、汇总速率、重传和 Spark RF 错误增长。
+时间戳修复后的 KPM 库和 monitor 已安装，并校验与新构建一致。保持 Spark 的 **CU、DU、FlexRIC** 运行，已有 iperf server 可继续使用。在已配置 WWAN 的 UE 终端开始上述 30 秒上行，**Spark 随即运行新安装的约 10 秒 `xapp_oran_moni`**，见 [Spark 安装后复验](spark_quick_commands.md#7a-时间戳修复安装后复验)。要求出现 `report_age_us`、UE ID 与 KPM 值，并正常退出。
+
+2026-10-07 已收到 UE ID `14` 的五项 DU 测量值；仅 `Successfully subscribed` 不能证明收到数据。时间戳修复后的真实 UE `report_age_us` 和本次 30 秒 iperf 结果仍待复验，也没有新的 ping 或长时稳定性证据；两端记录方向、汇总速率、重传和 Spark RF 错误增长。
 
 SIM/注册问题可用实际 `(qmi)` 端口做 `qmicli -p` 查询，见 [完整手册第 10 节](full_reproduction_runbook.md#10-prepare-a-new-ubuntulinux-laptop)；不要与 ModemManager 抢占无 proxy 的 QMI 会话。
 

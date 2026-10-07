@@ -1,6 +1,6 @@
 # Full Reproduction Runbook: Single-Link 5G SA
 
-Last updated: 2026-10-07. The 2026-10-05 session verified initial UE traffic; the 2026-10-07 session verified FlexRIC E2 Setup and KPM subscription/deletion. Actual UE KPM reception is the next validation step. This manual starts an installed Spark testbed and configures a new Ubuntu laptop. Software installation and builds are in [Installation](software_installation_and_drivers.md); daily commands with compact confirmations are in the [Spark](spark_quick_commands.md) and [UE laptop](ue_laptop_quick_commands.md) booklets.
+Last updated: 2026-10-07. The 2026-10-05 session verified initial UE traffic; the 2026-10-07 session verified FlexRIC E2 Setup, actual UE KPM reception and subscription/deletion. Synchronized traffic characterization remains to be done. This manual starts an installed Spark testbed and configures a new Ubuntu laptop. Software installation and builds are in [Installation](software_installation_and_drivers.md); daily commands with compact confirmations are in the [Spark](spark_quick_commands.md) and [UE laptop](ue_laptop_quick_commands.md) booklets.
 
 **Startup:** physical connections → USB 3 verification → host performance → clean SA service selection → MongoDB → subscriber/IPv4/NRF checks → required 5GC → `ogstun` → CU → FlexRIC → DU with E2 overlay → xApp subscription check → laptop setup → NR/SA cell lock → registration → IPv4 PDU session → active bearer → WWAN configuration → ping → traffic with KPM reception check.
 
@@ -536,9 +536,30 @@ If stable, repeat UDP at 4M, 6M, 8M, and 10M individually. Record direction, dur
 
 ### 14a Validate UE KPM reports during traffic
 
-This is the next acceptance test after the verified subscription-only run. Keep the iperf server, CU, RIC and DU running, and complete stages 12–14 on the laptop. Start a 30-second laptop uplink, then promptly repeat the Spark xApp command from stage 9c while traffic is active. The example's approximately 10-second observation window must overlap the UE traffic.
+Initial actual UE reception passed on 2026-10-07: gNB-DU UE F1AP ID `14` produced all five measurements. The procedure below repeats reception during a controlled application test; a synchronized 30-second benchmark has not yet been recorded. The installed timestamp-repair library and monitor match the repaired build. **Keep CU, RIC and DU running; this repair does not require their restart.** Reuse the existing iperf server or start it using stage 14, and complete stages 12–14 on the laptop.
 
-Require actual `UE ID type = gNB-DU` reports with measurement names and values such as `DRB.UEThpUl` and `RRU.PrbTotUl`. Record the UE ID, direction, traffic rate and report cadence. Subscription success or zero/no-value entries alone do not establish useful throughput telemetry. The example's printed indication-latency value requires an NTP timestamp conversion correction before it can be used as a latency result; see the dated FlexRIC record.
+`[LAPTOP]` In the same Bash terminal used to configure WWAN, start the uplink:
+
+```bash
+iperf3 -c 10.45.0.1 -B "${UE_IP:?请使用已配置WWAN的终端}" -t 30 -i 0
+```
+
+`[SPARK]` Immediately run the installed xApp in its own terminal, so its approximately 10-second observation window overlaps the traffic. This creates a fresh log and prints a compact result:
+
+```bash
+KPM_LOG=$(mktemp /tmp/flexric-kpm.XXXXXX.log)
+if /usr/local/bin/flexric/xApp/c/xapp_oran_moni \
+  -c /usr/local/etc/flexric/xapp_oran_sm.conf >"$KPM_LOG" 2>&1; then
+  grep -E 'report_age_us|UE ID type|Test xApp run' "$KPM_LOG" | tail -n 15
+else
+  tail -n 30 "$KPM_LOG"
+fi
+printf 'log=%s\n' "$KPM_LOG"
+```
+
+Require `report_age_us`, a gNB-DU UE ID and successful xApp exit together. Success without UE reports does not validate the repaired time display; confirm the UE traffic overlaps collection. The current live UE report-age result remains pending. See [Spark step 7a](spark_quick_commands.md#7a-时间戳修复安装后复验) for the two-host sequence and [step 7](spark_quick_commands.md#7-真实-ue-流量与-kpm-验证) for the five-metric log summary.
+
+Require actual `UE ID type = gNB-DU` reports with measurement names and values such as `DRB.UEThpUl` and `RRU.PrbTotUl`. Record the current UE ID, direction, application rate and report cadence. Throughput is in kbps, PRB usage in percent, and `DRB.RlcSduDelayDl` in 0.1 ms units. Selected observed samples were UL 14163–14675 kbps, UL PRB 86% and RLC DL delay 1.580–1.730 ms after conversion. The original huge negative indication-latency value is invalid; the [tested repair](troubleshooting/2026-10-07_flexric_latency_fix.md) is installed and needs live UE verification. The new signed `report_age_us` includes processing and queueing time.
 
 ## 15. Video experiment (procedure; not yet verified)
 
@@ -660,4 +681,4 @@ For a full shutdown, no CU/DU/RIC/xApp, running Open5GS services, or their GTP-U
 - [ ] Actual UE KPM IDs and metric values received during traffic at the configured period.
 - [ ] RF-error growth and test duration recorded; traffic stopped before teardown.
 
-FlexRIC E2 Setup and KPM subscription/deletion passed on 2026-10-07. Actual UE KPM reception, cold restart/new-laptop reproduction, longer TCP tests, downlink, UDP loss/jitter, live video and long-duration RF stability remain acceptance work. Freeze Single-Link Baseline v1 before adding another path, MPTCP or active AI steering.
+FlexRIC E2 Setup, actual UE KPM reception and subscription/deletion passed on 2026-10-07. Synchronized KPM/application traffic correlation, report timing, cold restart/new-laptop reproduction, longer TCP tests, downlink, UDP loss/jitter, live video and long-duration RF stability remain acceptance work. Freeze Single-Link Baseline v1 before adding another path, MPTCP or active AI steering.

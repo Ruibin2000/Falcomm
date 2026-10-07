@@ -1,0 +1,219 @@
+--- a/src/sm/kpm_sm/kpm_sm_v03.00/dec/dec_asn/dec_ric_ind_hdr_frm_1.c
++++ b/src/sm/kpm_sm/kpm_sm_v03.00/dec/dec_asn/dec_ric_ind_hdr_frm_1.c
+@@ -1,39 +1,21 @@
+ #include <assert.h>
+ #include "../../../../../util/conversions.h"
+-#include <arpa/inet.h> // ntohl
++#include <time.h>
+ 
+ #include "dec_ric_ind_hdr_frm_1.h"
+-
+-// #define ntohll(x) ((1==ntohl(1)) ? (x) : ((uint64_t)ntohl((x) & 0xFFFFFFFF) << 32) | ntohl((x) >> 32))
+-
+-// uint64_t ntohll(uint64_t x)
+-// {
+-//   return (uint64_t)((uint64_t)ntohl((x) & 0xFFFFFFFFLL) << 32) | (uint32_t)ntohl(x);
+-// }
+-
+-// #define ntohll(x) ((((uint64_t)ntohl(x)) << 32) + ntohl((x) >> 32))
+-
+-// #define NTOHLL(x) ((1==ntohl(1)) ? (x) : (((uint64_t)ntohl((x) & 0xFFFFFFFFUL)) << 32) | ntohl((uint32_t)((x) >> 32)))
+-
+-uint64_t ntohll(uint64_t x)
+-{
+-  uint32_t x1 = (uint32_t)((x & 0xFFFFFFFF00000000LL) >> 32);
+-  uint32_t x2 = (uint32_t)(x & 0xFFFFFFFFLL);
+-  x1 = ntohl(x1);
+-  x2 = ntohl(x2);
+-  uint64_t v = ((uint64_t)x1) << 32 | x2;
+-
+-  return v;
+-}
+-
++#include "../../ie/kpm_data_ie/kpm_ric_info/kpm_timestamp.h"
+ 
+ kpm_ric_ind_hdr_format_1_t kpm_dec_ind_hdr_frm_1_asn(const E2SM_KPM_IndicationHeader_Format1_t * ind_hdr_asn)
+ {
+     kpm_ric_ind_hdr_format_1_t ind_hdr = {0};
+ 
+-    uint64_t reversed_ts;
+-    reversed_ts = octet_string_to_int_64(ind_hdr_asn->colletStartTime);
+-    ind_hdr.collectStartTime = ntohll(reversed_ts);
++    assert(ind_hdr_asn != NULL);
++    assert(ind_hdr_asn->colletStartTime.size == 8);
++    assert(ind_hdr_asn->colletStartTime.buf != NULL);
++    const time_t reference = time(NULL);
++    assert(reference != (time_t)-1 && "Unable to read timestamp era reference");
++    const uint64_t ntp_timestamp = kpm_timestamp_read_be(ind_hdr_asn->colletStartTime.buf);
++    ind_hdr.collectStartTime = kpm_timestamp_to_unix_us(ntp_timestamp, (int64_t)reference);
+     
+     if (ind_hdr_asn->fileFormatversion != NULL){
+       ind_hdr.fileformat_version = calloc(1, sizeof(byte_array_t));
+--- a/src/sm/kpm_sm/kpm_sm_v03.00/enc/enc_asn/enc_ric_ind_hdr_frm_1.c
++++ b/src/sm/kpm_sm/kpm_sm_v03.00/enc/enc_asn/enc_ric_ind_hdr_frm_1.c
+@@ -1,29 +1,11 @@
+ #include <assert.h>
+ #include <stdint.h>
+ #include <stdlib.h>
+-#include <arpa/inet.h> // htonl
+ 
+ #include "../../../../../util/conversions.h"
+ 
+ #include "enc_ric_ind_hdr_frm_1.h"
+-
+-// #define htonll(x) ((1==htonl(1)) ? (x) : ((uint64_t)htonl((x) & 0xFFFFFFFF) << 32) | htonl((x) >> 32))
+-
+-// uint64_t htonll(uint64_t x)
+-// {
+-//   return (uint64_t)((uint64_t)htonl((x) & 0xFFFFFFFFLL) << 32) | (uint32_t)htonl(x);
+-// }
+-
+-uint64_t htonll(uint64_t x)
+-{
+-    uint32_t x1 = (uint32_t)((x & 0xFFFFFFFF00000000LL) >> 32);
+-    uint32_t x2 = (uint32_t)(x & 0xFFFFFFFFLL);
+-    x1 = htonl(x1);
+-    x2 = htonl(x2);
+-    uint64_t v = ((uint64_t)x1) << 32 | x2;
+-
+-    return v;
+-}
++#include "../../ie/kpm_data_ie/kpm_ric_info/kpm_timestamp.h"
+ 
+ E2SM_KPM_IndicationHeader_Format1_t * kpm_enc_ind_hdr_frm_1_asn(const kpm_ric_ind_hdr_format_1_t * ind_hdr)
+ {
+@@ -31,11 +13,12 @@
+     assert(ind_hdr_asn != NULL && "Memory exhausted");
+ 
+ 
+-    uint64_t ts = htonll(ind_hdr->collectStartTime);
+-    ind_hdr_asn->colletStartTime = int_64_to_octet_string(ts);
++    uint8_t timestamp_bytes[8];
++    kpm_timestamp_write_be(timestamp_bytes, kpm_timestamp_from_unix_us(ind_hdr->collectStartTime));
++    int ret = OCTET_STRING_fromBuf(&ind_hdr_asn->colletStartTime,
++                                  (const char *)timestamp_bytes, sizeof(timestamp_bytes));
++    assert(ret == 0);
+ 
+-
+-    int ret;
+ 
+     if (ind_hdr->fileformat_version != NULL){
+         ind_hdr_asn->fileFormatversion = calloc(1, sizeof(*ind_hdr_asn->fileFormatversion));
+--- a/src/sm/kpm_sm/kpm_sm_v03.00/ie/kpm_data_ie/kpm_ric_info/kpm_ric_ind_hdr_frm_1.h
++++ b/src/sm/kpm_sm/kpm_sm_v03.00/ie/kpm_data_ie/kpm_ric_info/kpm_ric_ind_hdr_frm_1.h
+@@ -11,7 +11,7 @@
+ // 8.2.1.3.1  E2SM-KPM Indication Header Format 1
+ 
+ typedef struct {
+-    uint64_t collectStartTime;  // 8.3.12
++    uint64_t collectStartTime;  // Unix microseconds internally; 8.3.12 NTP timestamp on the ASN wire
+     byte_array_t *fileformat_version;  /* OPTIONAL */
+     byte_array_t *sender_name;         /* OPTIONAL */
+     byte_array_t *sender_type;         /* OPTIONAL */
+--- /dev/null
++++ b/src/sm/kpm_sm/kpm_sm_v03.00/ie/kpm_data_ie/kpm_ric_info/kpm_timestamp.h
+@@ -0,0 +1,52 @@
++#ifndef KPM_V3_TIMESTAMP_H
++#define KPM_V3_TIMESTAMP_H
++
++#include <assert.h>
++#include <stdint.h>
++
++/* KPM v3 uses an eight-octet, big-endian NTP 32.32 timestamp on the wire.
++ * FlexRIC's internal collectStartTime remains Unix microseconds.
++ */
++static inline uint64_t kpm_timestamp_read_be(const uint8_t bytes[8])
++{
++  uint64_t timestamp = 0;
++  for (unsigned i = 0; i < 8; ++i)
++    timestamp = (timestamp << 8) | bytes[i];
++  return timestamp;
++}
++
++static inline void kpm_timestamp_write_be(uint8_t bytes[8], uint64_t timestamp)
++{
++  for (unsigned i = 0; i < 8; ++i)
++    bytes[i] = (uint8_t)(timestamp >> (56 - 8 * i));
++}
++
++static inline uint64_t kpm_timestamp_from_unix_us(uint64_t unix_us)
++{
++  const uint64_t seconds = unix_us / UINT64_C(1000000);
++  const uint64_t microseconds = unix_us % UINT64_C(1000000);
++  const uint64_t ntp_seconds = (seconds + UINT64_C(2208988800)) & UINT64_C(0xffffffff);
++  /* Round up so conversion back to whole microseconds preserves the input. */
++  const uint64_t fraction = ((microseconds << 32) + UINT64_C(999999)) / UINT64_C(1000000);
++  return (ntp_seconds << 32) | fraction;
++}
++
++static inline uint64_t kpm_timestamp_to_unix_us(uint64_t timestamp, int64_t reference_unix_seconds)
++{
++  const int64_t ntp_era_seconds = INT64_C(4294967296);
++  const uint32_t reference_ntp_seconds = (uint32_t)(reference_unix_seconds + INT64_C(2208988800));
++  int64_t delta = (int64_t)(timestamp >> 32) - reference_ntp_seconds;
++  /* Select the NTP era nearest receipt time, including the 2036 rollover.
++   * The timestamp must be within 2^31 seconds (about 68 years) of reference.
++   */
++  if (delta > INT32_MAX)
++    delta -= ntp_era_seconds;
++  else if (delta < INT32_MIN)
++    delta += ntp_era_seconds;
++  const int64_t unix_seconds = reference_unix_seconds + delta;
++  assert(unix_seconds >= 0 && "Pre-1970 timestamps cannot use the unsigned Unix-us API");
++  const uint64_t microseconds = ((timestamp & UINT64_C(0xffffffff)) * UINT64_C(1000000)) >> 32;
++  return (uint64_t)unix_seconds * UINT64_C(1000000) + microseconds;
++}
++
++#endif
+--- a/examples/xApp/c/monitor/xapp_oran_moni.c
++++ b/examples/xApp/c/monitor/xapp_oran_moni.c
+@@ -29,6 +29,7 @@
+ #include "../../../../src/sm/rc_sm/ie/rc_data_ie.h"
+ 
+ #include <stdlib.h>
++#include <inttypes.h>
+ #include <stdio.h>
+ #include <time.h>
+ #include <unistd.h>
+@@ -97,9 +98,10 @@
+            now/1000000 - hdr_frm_1->collectStartTime,
+            e2_node->type, e2_node->nb_id.nb_id);
+ #elif defined(KPM_V3_00)
+-    // collectStartTime (64bit) unit is micro-second
+-    printf("KPM-v3 ind_msg latency = %ld μs from E2-node type %d ID %d\n",
+-           now - hdr_frm_1->collectStartTime,
++    // The v3 ASN decoder normalizes NTP to Unix microseconds.
++    // This includes processing, queues and clock offset, not only transport.
++    printf("KPM-v3 report_age_us = %" PRId64 " from E2-node type %d ID %d\n",
++           now - (int64_t)hdr_frm_1->collectStartTime,
+            e2_node->type, e2_node->nb_id.nb_id);
+ #else
+     static_assert(0!=0, "Unknown KPM version");
+--- a/examples/xApp/c/monitor/xapp_all_moni.c
++++ b/examples/xApp/c/monitor/xapp_all_moni.c
+@@ -33,6 +33,7 @@
+ #include "../../../../src/util/alg_ds/ds/lock_guard/lock_guard.h"
+ 
+ #include <stdlib.h>
++#include <inttypes.h>
+ #include <stdio.h>
+ #include <time.h>
+ #include <unistd.h>
+@@ -83,9 +84,9 @@
+            now/1000000 - hdr_frm_1->collectStartTime,
+            e2_node->type, e2_node->nb_id.nb_id);
+ #elif defined(KPM_V3_00)
+-        // collectStartTime (64bit) unit is micro-second
+-    printf("KPM-v3 ind_msg latency = %ld μs from E2-node type %d ID %d\n",
+-           now - hdr_frm_1->collectStartTime,
++        // The v3 ASN decoder normalizes NTP to Unix microseconds.
++        printf("KPM-v3 report_age_us = %" PRId64 " from E2-node type %d ID %d\n",
++           now - (int64_t)hdr_frm_1->collectStartTime,
+            e2_node->type, e2_node->nb_id.nb_id);
+ #else
+         static_assert(0!=0, "Unknown KPM version");
+@@ -667,4 +668,3 @@
+ }
+ 
+ 
+-
