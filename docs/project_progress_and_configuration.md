@@ -43,7 +43,7 @@ The tested application path is **laptop ↔ Spark over private 5G**. Management 
 | 4 | RM500Q SA registration, authentication, IPv4 PDU, WWAN, local data | Verified in initial session |
 | 5 | Second DU / second radio / second UE | Future work |
 | 6 | Host realtime work | Performance script and privileged launch applied; sustained stability open |
-| 7–8 | FlexRIC / KPM xApp | Installed; E2 Setup, actual UE reports, KPM subscription and deletion verified |
+| 7–8 | FlexRIC / KPM xApp | Installed; E2 Setup, actual UE reports, repaired timestamp display, subscription and deletion verified |
 | 9–11 | MPTCP / RIC-assisted control / AI steering | Future work |
 
 Next, correlate KPM with synchronized application traffic, reproduce the single-link result after a cold start and on the new laptop, characterize traffic and freeze Baseline v1 before adding the second path or active steering.
@@ -192,7 +192,9 @@ The existing OCUDU binary already contains E2 support; `ENABLE_EXPORT` controls 
 | KPM function / action / period | RAN function ID `2`, Format 4, 1000 ms |
 | DU measurement names | `DRB.RlcSduDelayDl`, `DRB.UEThpDl`, `DRB.UEThpUl`, `RRU.PrbTotDl`, `RRU.PrbTotUl` |
 
-The default xApp config also lists monolithic gNB/CU and RC subscriptions; the RAN-type checks select only the DU KPM block for this node. The `73650812` example runs for about 10 seconds, deletes its subscription and exits normally. A later run received all five metrics for actual gNB-DU UE F1AP ID `14`. Selected samples show `DRB.UEThpUl` 14163–14675 kbps, `DRB.UEThpDl` 242–253 kbps, `DRB.RlcSduDelayDl` 15.80–17.30 in 0.1 ms units, and UL/DL PRB usage 86%/0%. UE IDs can change. The original indication latency is invalid because of timestamp decoding/conversion; the [repair](troubleshooting/2026-10-07_flexric_latency_fix.md) is built, tested and installed, with live UE time verification pending. See [runtime steps](full_reproduction_runbook.md#9a-prepare-the-du-e2-overlay) and the [dated record](troubleshooting/2026-10-07_flexric_bringup.md) for metric interpretation.
+The default xApp config also lists monolithic gNB/CU and RC subscriptions; the RAN-type checks select only the DU KPM block for this node. The `73650812` example runs for about 10 seconds, deletes its subscription and exits normally. An initial actual gNB-DU UE F1AP ID `14` run received all five metrics: selected UL/DL throughput samples were 14163–14675 / 242–253 kbps, DL RLC delay 15.80–17.30 in 0.1 ms units, and UL/DL PRB usage 86%/0%.
+
+After the installed [timestamp repair](troubleshooting/2026-10-07_flexric_latency_fix.md), UE F1AP ID `2` produced 12 `report_age_us` values of **499–717 microseconds**, followed by normal deletion and exit. Its selected UL/DL throughput samples were 11916–11927 / 147–164 kbps, DL RLC delay **1.380–1.440 ms** after conversion, and UL/DL PRB usage **88%/0%**. UE IDs can change. Live timestamp display is now verified; precise age accuracy and synchronized application throughput are not established by these excerpts. See [runtime steps](full_reproduction_runbook.md#9a-prepare-the-du-e2-overlay) and the [dated record](troubleshooting/2026-10-07_flexric_bringup.md) for metric interpretation.
 
 ### Open5GS identity, sessions and interfaces
 
@@ -245,6 +247,8 @@ The first 10-second TCP uplink reported sender 7.50 MBytes / 6.29 Mbit/s / Retr 
 Confirmed repairs: NRF `999/70` → `001/01`; missing subscriber provisioned; private SA cell selection/lock; subscriber type 3 → 1 after IPv4v6 rejection; host performance improvements; actual static WWAN settings applied. See the [chronological troubleshooting record](troubleshooting/2026-10-05_sa_bringup.md) for evidence and ruled-out hypotheses.
 
 The **2026-10-07 FlexRIC session** verified all ten SA services active, CU N2 connected, DU F1 connected, E2 Setup accepted and KPM function ID 2 registered. After the codec update, the xApp completed subscription and deletion. A subsequent run received repeated actual gNB-DU UE ID `14` reports containing all five metrics and exited with `Test xApp run SUCCESSFULLY`. Traffic direction, application rate and duration were not recorded alongside these KPM excerpts, so they do not replace the 2026-10-05 application benchmark. Separate offline tests with synthetic messages checked new FlexRIC Format 4 subscriptions against the existing OCUDU decoder and OCUDU Format 3 indications against the new FlexRIC decoder.
+
+A later installed-monitor run verified the repaired timestamp display with actual UE ID `2`, 12 report-age values of 499–717 microseconds, all five measurement names and normal subscription deletion/exit. Application sender/receiver results and precise report cadence remain unrecorded for this run.
 
 ## Host performance and remaining work
 

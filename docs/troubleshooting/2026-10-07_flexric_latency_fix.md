@@ -2,7 +2,7 @@
 
 Date: **2026-10-07**. Applies to FlexRIC commit `736508123fe4b5dc3db83fb5baf5f0a8e9b04fe8` and the current OCUDU `050a2bb` DU. See the [bring-up record](2026-10-07_flexric_bringup.md) for the earlier subscription codec repair and actual UE measurements.
 
-The repair is applied to `/home/nyu/flexric`, and the affected `build-ocudu` targets compiled successfully. Offline regression checks and an isolated live subscription check passed. **The installed `/usr/local` KPM library and `xapp_oran_moni` now match the repaired build**, confirmed by read-only SHA-256 checks. Live UE report-age values remain pending.
+The repair is applied to `/home/nyu/flexric`, and the affected `build-ocudu` targets compiled successfully. Offline regression checks and an isolated live subscription check passed. **The installed `/usr/local` KPM library and `xapp_oran_moni` match the repaired build**, confirmed by read-only SHA-256 checks. **The repaired header display is now verified with actual UE reports**: 12 `report_age_us` values ranged from 499 to 717 microseconds. This verifies the timestamp display, not physical delay accuracy or a synchronized application benchmark.
 
 ## Cause and repair
 
@@ -81,7 +81,7 @@ Before installation, the new `xapp_oran_moni` ran against the existing RIC using
 
 The initial agent installation attempt using `sudo -n` required a password and stopped before writing installed files. At that stage, the installed KPM library had SHA-256 `74f62b45b8ac37b770b20e53a39e0fa19eac5944ebb0b4a977e5a906b40f2711`.
 
-Subsequent read-only verification confirms that both the built and installed KPM library now have SHA-256 `f7e62d2a135e587d67a39cddcc1270ec9ba0ec97df03a3f8dbf63124c46ed53d`. The built and installed `xapp_oran_moni` also match, with SHA-256 `95b2a3a6d5a2764efa8c3266d4a3b7fa75a35bb6700dd0cc43f9732a7591b7d3`. These checks establish deployment of the two artifacts needed for the next live UE check; the live `report_age_us` result is still unverified.
+Subsequent read-only verification confirms that both the built and installed KPM library now have SHA-256 `f7e62d2a135e587d67a39cddcc1270ec9ba0ec97df03a3f8dbf63124c46ed53d`. The built and installed `xapp_oran_moni` also match, with SHA-256 `95b2a3a6d5a2764efa8c3266d4a3b7fa75a35bb6700dd0cc43f9732a7591b7d3`. These checks establish deployment of the two artifacts used for the successful live UE header-display check recorded below.
 
 For reproduction on a host that still has the old installed artifacts, use the [installer](../../scripts/flexric/install_timestamp_fix.sh) in the operator's Spark terminal and enter the sudo password there:
 
@@ -104,6 +104,35 @@ cmp -s /home/nyu/flexric/build-ocudu/examples/xApp/c/monitor/xapp_oran_moni \
 
 Keep the existing CU, DU and RIC running, and let any previous xApp finish. Reuse the Spark iperf server or start `iperf3 -s -B 10.45.0.1`. In the UE laptop's WWAN-configured Bash terminal, start the 30-second uplink; immediately run the installed Spark xApp with a fresh `KPM_LOG`. Its approximately 10-second collection window must overlap the traffic.
 
-Follow the complete [Spark step 7a](../spark_quick_commands.md#7a-时间戳修复安装后复验) or [runbook stage 14a](../full_reproduction_runbook.md#14a-validate-ue-kpm-reports-during-traffic). The compact output must include actual UE IDs, `KPM-v3 report_age_us` values and `Test xApp run SUCCESSFULLY`. Successful exit alone means the subscription lifecycle passed; it does not verify UE report age. The command prints the new log path for reviewing the five measurement values or failures.
+Follow the complete [Spark step 7a](../spark_quick_commands.md#7a-verify-reports-after-the-timestamp-repair) or [runbook stage 14a](../full_reproduction_runbook.md#14a-validate-ue-kpm-reports-during-traffic). The compact output must include actual UE IDs, `KPM-v3 report_age_us` values and `Test xApp run SUCCESSFULLY`. Successful exit alone means the subscription lifecycle passed; it does not verify UE report age. The command prints the new log path for reviewing the five measurement values or failures.
 
-Installation is verified; live UE report-age values and a synchronized 30-second application benchmark remain pending. Keep the metric units and timestamp precision limits above when interpreting the eventual result.
+## Live UE report-age result
+
+The matching runtime log `/tmp/flexric-kpm.CanZAQ.log` records a successful function-ID-2 subscription to node `411`, actual gNB-DU UE `gnb_cu_ue_f1ap = 2` reports, `[xApp]: E42 SUBSCRIPTION DELETE RESPONSE rx`, and `Test xApp run SUCCESSFULLY`. It contains **12** `KPM-v3 report_age_us` values, all positive, with a minimum of **499** and maximum of **717 microseconds**. The huge negative display is resolved in this run. The node and UE identifiers are observations for this run.
+
+Two selected consecutive reports match the user's pasted measurements:
+
+| Field | Unit | Selected report A | Selected report B |
+|---|---|---|---|
+| `report_age_us` | microseconds | 569 | 626 |
+| `DRB.RlcSduDelayDl` | 0.1 ms | 13.80 = 1.380 ms | 14.40 = 1.440 ms |
+| `DRB.UEThpDl` | kbps | 164.00 | 147.00 |
+| `DRB.UEThpUl` | kbps | 11927.00 | 11916.00 |
+| `RRU.PrbTotDl` | % | 0 | 0 |
+| `RRU.PrbTotUl` | % | 88 | 88 |
+
+These are selected samples, not the full-run metric ranges. They verify actual UE measurement reception and the repaired signed header display through the normal subscription/deletion lifecycle. The display retains the OCUDU fractional bias of up to approximately 226 microseconds and any clock offset; 499–717 microseconds therefore does not establish true transport-delay accuracy or application RTT. This evidence has no synchronized iperf direction, duration, or sender/receiver results, so the 30-second application benchmark and application/KPM correlation remain pending.
+
+## Repeat runs and empty observation windows
+
+Subsequent captures distinguish successful subscription from actual report reception:
+
+| Capture | Observed UE ID | UE report count | Report age range | Subscription lifecycle |
+|---|---|---|---|---|
+| `flexric-kpm.CanZAQ.log` | 2 | 12 | 499–717 microseconds | Subscribe, delete and normal exit passed |
+| `flexric-kpm.I33As6.log` | No UE reports | 0 | No timestamp samples | Subscribe, delete and normal exit passed |
+| `flexric-kpm.xNCQpG.log` | 7 | 12 | 591–796 microseconds | Subscribe, delete and normal exit passed |
+
+The zero-report capture still registered one E2 node and subscribed successfully to function ID 2. It had no UE IDs, report-age values or measurement lines during its observation window. Those logs do not establish why no eligible reports arrived; confirm UE registration and overlap between traffic and xApp collection before repeating. This run provides no timestamp measurement and does not invalidate the earlier repaired display.
+
+The later UE `7` capture received all five DU measurement names and 12 report-age samples from node `411`, followed by successful deletion and exit. The complete log range is 591–796 microseconds; the final seven reports shown in the operator's excerpt range from 591 to 795 microseconds. UE IDs can change between runs. The quick commands now print a lifecycle result and report count, with an explicit `NO_UE` result for a successful subscription without UE data.

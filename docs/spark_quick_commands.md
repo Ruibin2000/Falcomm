@@ -1,43 +1,43 @@
-# Spark 快速指令册
+# Spark Quick Commands
 
-更新于 2026-10-07。已安装的 Spark 用此册；新主机见[软件与驱动](software_installation_and_drivers.md)，详细配置见[完整复现流程](full_reproduction_runbook.md)，UE 操作见[UE laptop 指令册](ue_laptop_quick_commands.md)。使用 Bash，逐步执行，出现 `FAIL` 就停在该步骤。
+Updated: 2026-10-07. Use this guide on the installed Spark testbed. For a new host, see [Software and Drivers](software_installation_and_drivers.md); for detailed configuration, see the [Full Reproduction Runbook](full_reproduction_runbook.md). UE commands are in [UE Laptop Quick Commands](ue_laptop_quick_commands.md). Use Bash, run one step at a time, and stop at any `FAIL` result.
 
-2026-10-07 已验证 **DU 的 E2 Setup、真实 UE 的五项 KPM 测量、正常取消订阅及 xApp 成功退出**。当前 DU 配置是 TX **70** / RX **40**；2026-10-05 的 UE 应用流量 / TCP 结果使用 TX **80** / RX **40**，两次结果不要混为同一射频基线。以下命令读取当前配置，不改增益。
+Verified on 2026-10-07: **DU E2 Setup, all five actual UE KPM measurements, the repaired report-time display, normal subscription deletion, and successful xApp exit**. Earlier UE ID `2` had `report_age_us` values of **499–717 µs**; the latest repeat with UE ID `7` had **591–796 µs**. The current DU configuration uses TX **70** / RX **40**; the 2026-10-05 UE application traffic / TCP result used TX **80** / RX **40**. Keep these RF baselines distinct. The commands below read the current configuration without changing gains.
 
-版本：OCUDU `050a2bb`；FlexRIC `73650812`，构建目录 `build-ocudu`，GCC 13.3 / Debug / `E2AP_V3` / `KPM_V3_00` / `NONE_XAPP` / `XAPP_MULTILANGUAGE=OFF`。
+Versions: OCUDU `050a2bb`; FlexRIC `73650812`, build directory `build-ocudu`, GCC 13.3 / Debug / `E2AP_V3` / `KPM_V3_00` / `NONE_XAPP` / `XAPP_MULTILANGUAGE=OFF`.
 
-检查命令放在检查终端；CU、FlexRIC、DU、iperf 各占一个前台终端。第 6、7 步使用同一个 xApp Bash 终端，变量不会跨终端共享。
+Run checks in a diagnostics terminal. CU, FlexRIC, DU, and iperf each need their own foreground terminal. Use the same xApp Bash terminal for steps 6 and 7; shell variables are not shared between terminals.
 
-## 1 启动前检查
+## 1 Check before startup
 
-在 Spark 的检查终端执行。**只有 DU 已停止时才运行 UHD 检查**；发现旧 DU/CU 时先按末尾关机步骤处理。
+Run in the Spark diagnostics terminal. **Run UHD checks only while DU is stopped.** If an earlier DU/CU experiment is still running, follow the shutdown steps first.
 
 ```bash
 if pgrep -x odu >/dev/null; then
-  printf 'FAIL: DU 正在运行，先停止；不要探测 B210\n'
+  printf 'FAIL: DU is running; stop it before probing B210\n'
 else
   lsusb -t
   sudo uhd_find_devices
 fi
 ```
 
-确认 B210 `3271233` 和 USB 树中的 `5000M`。
+Confirm B210 serial `3271233` and `5000M` in the USB tree.
 
 ```bash
 cd /home/nyu/ocudu
 rg 'tx_gain|rx_gain|srate|dl_arfcn|channel_bandwidth_MHz' configs/du1_b210_n78_20mhz.yml
 ```
 
-预期 TX 70、RX 40、23.04 MS/s、ARFCN 650000、20 MHz。锁小区时 UE 使用 SSB ARFCN **649632**。
+Expect TX 70, RX 40, 23.04 MS/s, ARFCN 650000, and 20 MHz. The UE cell lock uses SSB ARFCN **649632**.
 
-## 2 重启后恢复性能设置
+## 2 Restore performance settings after reboot
 
 ```bash
 cd /home/nyu/ocudu
 sudo ./scripts/ocudu_performance
 ```
 
-三个提示依次回答 `Y`，然后简短确认：
+Answer `Y` to each of the three prompts, then check the short summaries:
 
 ```bash
 awk '$0 != "performance" {bad++} END {printf "CPU governor: %s (%d CPUs)\n", NR && !bad ? "OK" : "FAIL", NR}' /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
@@ -50,9 +50,9 @@ sysctl -n net.core.rmem_max net.core.wmem_max net.core.rmem_default net.core.wme
   awk '$0 != 33554432 {bad++} END {print "Network buffers: " (NR == 4 && !bad ? "OK" : "FAIL")}'
 ```
 
-## 3 MongoDB 与核心网
+## 3 Start MongoDB and the core
 
-保留已有 `open5gs-mongo` 及 data volume。Subscriber 应为 SST 1、`internet`、type 1，核对见[完整流程](full_reproduction_runbook.md#5-start-mongodb-and-verify-the-subscriber)。
+Preserve the existing `open5gs-mongo` container and data volume. The subscriber should have SST 1, session `internet`, and type 1; see the [subscriber check](full_reproduction_runbook.md#5-start-mongodb-and-verify-the-subscriber).
 
 ```bash
 sudo docker start open5gs-mongo >/dev/null &&
@@ -63,20 +63,20 @@ print("MongoDB: OK");
 '
 ```
 
-专用 Spark 先停止已有 LTE/可选服务；换主机时省略不存在的 unit：
+On this dedicated Spark, stop the installed LTE/optional services first. Omit absent units on another host:
 
 ```bash
 sudo systemctl stop open5gs-mmed open5gs-hssd open5gs-pcrfd open5gs-sgwcd open5gs-sgwud
 sudo systemctl stop open5gs-bsfd open5gs-seppd
 ```
 
-十个 SA unit 顺序启动，再逐项检查，只列失败项。多 unit 的一次 `is-active --quiet` 不能判断全部成功。
+Start the ten SA units sequentially, then check each one and list only failures. A single `is-active --quiet` call with multiple units cannot prove that all are active.
 
 ```bash
 CORE_UNITS=(open5gs-nrfd open5gs-scpd open5gs-udrd open5gs-udmd open5gs-ausfd open5gs-pcfd open5gs-nssfd open5gs-upfd open5gs-smfd open5gs-amfd)
 for unit in "${CORE_UNITS[@]}"; do
   if ! sudo systemctl start "$unit"; then
-    printf 'FAIL: 无法启动 %s\n' "$unit"
+    printf 'FAIL: Cannot start %s\n' "$unit"
     break
   fi
 done
@@ -91,7 +91,7 @@ done
 printf '5GC active: %d/10\n' "$active"
 ```
 
-检查已有 `ogstun` 的 UP 标志、MTU 1400、地址及私网路由：
+Check the existing `ogstun` for its UP flag, MTU 1400, address, and private route:
 
 ```bash
 if ip -o link show dev ogstun | awk '/(<|,)UP(,|>)/ && / mtu 1400 / {ok=1} END {exit !ok}' &&
@@ -99,20 +99,20 @@ if ip -o link show dev ogstun | awk '/(<|,)UP(,|>)/ && / mtu 1400 / {ok=1} END {
    ip -4 route show 10.45.0.0/16 | awk '/^10\.45\.0\.0\/16 .*dev ogstun/ {ok=1} END {exit !ok}'; then
   printf 'ogstun: OK (UP, MTU 1400, 10.45.0.1/16, route)\n'
 else
-  printf 'ogstun: FAIL；检查 networkd 与 99-open5gs 配置\n'
+  printf 'ogstun: FAIL; check networkd and the 99-open5gs configuration\n'
 fi
 ```
 
-## 4 前台启动 CU 和 FlexRIC
+## 4 Start CU and FlexRIC in foreground terminals
 
-**CU 终端**：
+**CU terminal:**
 
 ```bash
 cd /home/nyu/ocudu
 sudo build/apps/cu/ocu -c configs/cu.yml
 ```
 
-确认 N2 `completed`、`==== CU started ===`，保持运行。然后在 **FlexRIC 终端**启动并保留当前日志：
+Confirm N2 `completed` and `==== CU started ===`; keep CU running. Start FlexRIC in its own terminal and save the current log:
 
 ```bash
 set -o pipefail
@@ -120,9 +120,9 @@ stdbuf -oL -eL /usr/local/bin/flexric/ric/nearRT-RIC -c /usr/local/etc/flexric/r
   tee /tmp/flexric-ric.log
 ```
 
-## 5 启动带 E2 的 DU
+## 5 Start DU with E2 enabled
 
-已有 `configs/du1_flexric.yml` 开启 E2/KPM 和 metrics；缺失时先按[完整流程](full_reproduction_runbook.md)创建。在 **DU 终端**执行，此步启动 B210 射频：
+The existing `configs/du1_flexric.yml` enables E2/KPM and metrics. If it is missing, create it using the [full runbook](full_reproduction_runbook.md) first. Run in the **DU terminal**; this starts B210 RF transmission:
 
 ```bash
 cd /home/nyu/ocudu
@@ -131,7 +131,7 @@ sudo build/apps/du_split_8/odu \
   -c configs/du1_flexric.yml
 ```
 
-确认 F1-C / E2AP `completed`、`==== DU started ===`。FlexRIC 应收到本次 DU `E2 SETUP-REQUEST` 并接受 KPM ID `2`。检查终端只看三条 SCTP 连接摘要：
+Confirm F1-C / E2AP `completed` and `==== DU started ===`. FlexRIC should receive this DU's `E2 SETUP-REQUEST` and accept KPM ID `2`. In the diagnostics terminal, check the summary of the three SCTP connections:
 
 ```bash
 sudo ss -H -an -A sctp | awk '
@@ -143,19 +143,19 @@ sudo ss -H -an -A sctp | awk '
     exit !(n2 && f1 && e2)
   }'
 if [ ! -f /tmp/flexric-ric.log ]; then
-  printf 'RIC 日志未保存；在现有 RIC 终端确认接受 KPM ID 2。\n'
+  printf 'RIC log was not saved; confirm acceptance of KPM ID 2 in the running RIC terminal.\n'
 elif grep -q 'Accepting RAN function ID 2 with def = ORAN-E2SM-KPM' /tmp/flexric-ric.log; then
   printf 'RIC accepted DU KPM: OK\n'
 else
-  printf 'RIC accepted DU KPM: FAIL；查看 FlexRIC 当前日志\n'
+  printf 'RIC accepted DU KPM: FAIL; inspect the current FlexRIC log\n'
 fi
 ```
 
-`/tmp/flexric-ric.log` 由第 4 步的 `tee` 创建；此前直接启动 RIC 时没有这个文件，可查看现有 RIC 终端，无需为保存日志重启连接。
+Step 4 creates `/tmp/flexric-ric.log` through `tee`. An earlier direct RIC launch did not create this file. Inspect the running RIC terminal instead; saving a log does not require restarting the connection.
 
-## 6 KPM 订阅快速验证
+## 6 Verify the KPM subscription
 
-**等本次 DU 被接受后，在 Spark 的 xApp 终端完整执行下面代码块**。示例采集约 10 秒后删除订阅并退出。完整输出留在临时日志，正常只显示一行。`KPM_LOG` 只保存在这个 Bash 终端；第 7 步的日志命令也在同一终端执行。此前直接运行 xApp、不重定向输出的命令不会创建这个日志文件。
+**After this DU is accepted, run the entire block below in the Spark xApp terminal.** The example collects for about 10 seconds, then deletes the subscription and exits. Full output goes into a temporary log; a normal run prints one summary line. `KPM_LOG` exists only in this Bash terminal, so run the step 7 log commands here too. Earlier direct xApp launches without output redirection did not create this log file.
 
 ```bash
 KPM_LOG=$(mktemp /tmp/flexric-kpm.XXXXXX.log)
@@ -166,87 +166,103 @@ if [ "$KPM_EXIT" -eq 0 ] &&
    grep -q 'Successfully subscribed to RAN_FUNC_ID 2' "$KPM_LOG" &&
    grep -q 'E42 SUBSCRIPTION DELETE RESPONSE rx' "$KPM_LOG" &&
    grep -q 'Test xApp run SUCCESSFULLY' "$KPM_LOG"; then
-  printf 'KPM: OK (订阅、删除、退出)；log=%s\n' "$KPM_LOG"
+  printf 'KPM: OK (subscription, deletion, exit); log=%s\n' "$KPM_LOG"
 else
-  printf 'KPM: FAIL (exit=%s)；log=%s\n' "$KPM_EXIT" "$KPM_LOG"
+  printf 'KPM: FAIL (exit=%s); log=%s\n' "$KPM_EXIT" "$KPM_LOG"
   tail -n 30 "$KPM_LOG"
 fi
 ```
 
-没有 UE 测量时，订阅仍可成功。不要把上述 `OK` 当成 UE KPM 数据验证通过。
+Subscription can succeed without UE measurements. The `OK` result above confirms the subscription lifecycle, not UE KPM reception.
 
-## 7 真实 UE 流量与 KPM 验证
+## 7 Validate UE traffic and KPM reports
 
-本次已收到 UE `gnb_cu_ue_f1ap=14` 的五项 DU 测量。以下用于后续与应用流量同步复验，30 秒 TCP 是操作步骤。
+An earlier run received all five DU measurements for UE `gnb_cu_ue_f1ap=14`. After the timestamp repair, reception passed with UE ID `2`, then with UE ID `7` in the latest repeat. The following procedure coordinates application traffic and collection; its 30-second TCP test is a procedure, not a recorded benchmark result.
 
-UE 完成注册、IPv4 bearer、WWAN 和 ping 后，Spark **iperf 终端**启动服务：
+After UE registration, an IPv4 bearer, WWAN configuration, and ping succeed, start the server in the Spark **iperf terminal**:
 
 ```bash
 iperf3 -s -B 10.45.0.1
 ```
 
-UE laptop 开始 30 秒 TCP 流量后，Spark **xApp 终端**立即完整执行第 6 步，让约 10 秒的采集窗口覆盖正在传输的真实 UE。退出后，**留在同一个 xApp 终端**查看测量证据：
+After the UE laptop starts its 30-second TCP transfer, immediately run the entire step 6 block in the Spark **xApp terminal** so the roughly 10-second collection window overlaps UE traffic. After xApp exits, **stay in the same xApp terminal** to inspect the measurements:
 
 ```bash
 if [ -n "${KPM_LOG:-}" ] && [ -f "$KPM_LOG" ]; then
   grep -E 'UE ID type|^DRB\.|^RRU\.' "$KPM_LOG" | tail -n 20
 else
-  printf 'KPM 日志未设置或不存在；先在这个终端完整执行第 6 步。\n'
+  printf 'KPM log is unset or missing; first run the entire step 6 block in this terminal.\n'
 fi
 ```
 
-若换了终端，先用 `read -r -p '粘贴第 6 步 log= 后的完整文件路径：' KPM_LOG` 指定那次采集的日志，再执行上面的检查；不要猜测历史日志文件名。
+If you switch terminals, first run `read -r -p 'Paste the full file path printed after log= in step 6: ' KPM_LOG` to select that capture's log, then run the check above. Do not guess an old log filename.
 
-需看到 UE ID 和五项 DU 测量值再记录结果；空输出、`noValue` 或订阅成功本身不能证明已采集真实 UE 数据。
+Require a UE ID and values for all five DU measurements before recording reception as successful. Empty output, `noValue`, or subscription success alone cannot prove that actual UE measurements arrived.
 
-未安装时间戳补丁的 xApp 会显示无效的 `KPM-v3 ind_msg latency`；正常测量摘要不包含该行。当前源码已修复，构建、测试和安装验证通过；真实 UE 的时间显示复验见下一步。
+An xApp without the timestamp patch displays an invalid `KPM-v3 ind_msg latency`; the normal measurement summary excludes this line. The current source, installation, and actual UE `report_age_us` display have passed verification. Use the next step for repeat checks.
 
-### 7a 时间戳修复安装后复验
+### 7a Verify reports after the timestamp repair
 
-当前已确认安装的 KPM 库和 `xapp_oran_moni` 与修复构建一致。**CU、DU、RIC 不用重启**；等已有 xApp 退出后，按以下顺序复验。
+On 2026-10-07, an earlier run after installation received **12 reports** for UE ID `2`, with `report_age_us` of **499–717 µs**. The latest repeat received **12 reports** for UE ID `7`, with **591–796 µs**. Both completed subscription, deletion, and xApp exit successfully. An intervening run subscribed successfully but received no UE reports. **CU, DU, and RIC do not need a restart.** Wait for any existing xApp to exit, then repeat the check in this order.
 
-1. Spark **iperf 终端**启动服务，已有服务则跳过：
+1. Start the server in the Spark **iperf terminal**; skip this if it is already running:
 
 ```bash
 iperf3 -s -B 10.45.0.1
 ```
 
-2. UE laptop 在此前配置 WWAN 的同一个 Bash 终端启动 30 秒上行流量：
+2. In the UE laptop's Bash terminal where WWAN was configured, start a 30-second uplink transfer:
 
 ```bash
-iperf3 -c 10.45.0.1 -B "${UE_IP:?请使用已配置WWAN的终端}" -t 30 -i 0
+iperf3 -c 10.45.0.1 -B "${UE_IP:?Use the terminal where WWAN was configured}" -t 30 -i 0
 ```
 
-3. UE 流量启动后，立即在 Spark **xApp 终端**完整执行下面代码块，让约 10 秒的采集窗口覆盖流量。该块创建新的日志，不依赖旧终端中的 `KPM_LOG`：
+3. Immediately after UE traffic starts, run the entire block below in the Spark **xApp terminal** so its roughly 10-second collection window overlaps the transfer. This creates a new log and does not depend on `KPM_LOG` from an earlier terminal:
 
 ```bash
 KPM_LOG=$(mktemp /tmp/flexric-kpm.XXXXXX.log)
 if /usr/local/bin/flexric/xApp/c/xapp_oran_moni \
   -c /usr/local/etc/flexric/xapp_oran_sm.conf >"$KPM_LOG" 2>&1; then
-  grep -E 'report_age_us|UE ID type|Test xApp run' "$KPM_LOG" | tail -n 15
+  KPM_EXIT=0
 else
+  KPM_EXIT=$?
+fi
+if [ "$KPM_EXIT" -eq 0 ] &&
+   grep -q 'Successfully subscribed to RAN_FUNC_ID 2' "$KPM_LOG" &&
+   grep -q 'E42 SUBSCRIPTION DELETE RESPONSE rx' "$KPM_LOG" &&
+   grep -q 'Test xApp run SUCCESSFULLY' "$KPM_LOG"; then
+  KPM_REPORTS=$(awk '/^KPM-v3 report_age_us/ {n++} END {print n+0}' "$KPM_LOG")
+  KPM_UES=$(awk '/^UE ID type = gNB-DU/ {n++} END {print n+0}' "$KPM_LOG")
+  if [ "$KPM_REPORTS" -gt 0 ] && [ "$KPM_UES" -gt 0 ]; then
+    printf 'KPM: OK (subscription, deletion, exit); UE reports=%s; log=%s\n' "$KPM_REPORTS" "$KPM_LOG"
+    grep -E 'report_age_us|UE ID type' "$KPM_LOG" | tail -n 15
+  else
+    printf 'KPM: OK (subscription, deletion, exit); NO_UE (no UE reports in this run); log=%s\n' "$KPM_LOG"
+    printf 'Confirm UE registration and overlap between traffic and collection.\n'
+  fi
+else
+  printf 'KPM: FAIL (exit=%s; lifecycle checks failed); log=%s\n' "$KPM_EXIT" "$KPM_LOG"
   tail -n 30 "$KPM_LOG"
 fi
-printf 'log=%s\n' "$KPM_LOG"
 ```
 
-要求同时看到 `KPM-v3 report_age_us`、`UE ID type` 和 `Test xApp run SUCCESSFULLY`。只有成功退出而没有 UE ID / report age，说明本次没有收到 UE 报告，先确认 UE 流量与采集窗口重叠。完整日志保留在打印的路径；五项测量仍按第 7 步在同一终端查看。
+A positive `UE reports` count confirms UE reports arrived in this run. `NO_UE` means subscription, deletion, and exit succeeded but no UE report arrived; check UE registration and traffic overlap. It does not establish a timestamp-repair failure. The printed path contains the full log; use step 7 in the same terminal to inspect the five measurements.
 
-`report_age_us` 单位是微秒，包含报告处理、排队和转发时间；不等于纯网络时延或应用 RTT。当前代码/离线验证及安装验证已通过，真实 UE 数值待复验。详细原因和精度限制见[时间戳修复记录](troubleshooting/2026-10-07_flexric_latency_fix.md)。
+`report_age_us` is in microseconds and includes report processing, queueing, and forwarding time. It is not pure network delay or application RTT. A 30-second application uplink/downlink benchmark, report-period accuracy, and sustained stability remain to be verified. For the cause and accuracy limits, see the [Timestamp Repair Record](troubleshooting/2026-10-07_flexric_latency_fix.md).
 
-以后需要重新安装修复时，在 Spark 终端执行下列命令并输入 sudo 密码。脚本先备份再原子替换 KPM 库和两个 C monitor：
+If the repair needs reinstalling later, run the following in a Spark terminal and enter the sudo password. The script backs up and atomically replaces the KPM library and two C monitors:
 
 ```bash
 sudo bash /home/nyu/Desktop/Falcon_repo/Falcon/scripts/flexric/install_timestamp_fix.sh
 ```
 
-## 8 关闭顺序
+## 8 Shut down
 
-1. 两端停止 iperf / 视频等应用；让短时 xApp 完成正常删除并退出。
-2. UE laptop 断开 bearer，清理本次手动 WWAN 地址和私网 host route，见[UE 关闭步骤](ue_laptop_quick_commands.md)。
-3. **DU 终端 `Ctrl+C`**，等 `Stopping...` 并回到 shell；确认 DU 已退出后再停 FlexRIC 和 CU。
-4. **FlexRIC 终端 `Ctrl+C`**，再在 **CU 终端 `Ctrl+C`**。
-5. 检查终端按反序停止十个核心网服务；WebUI/MongoDB 可保留。
+1. Stop iperf, video, and other applications on both hosts. Let the finite xApp delete its subscription and exit normally.
+2. Disconnect the UE laptop's bearer and remove this run's manual WWAN address and private host route; see [UE Shutdown](ue_laptop_quick_commands.md).
+3. Press **`Ctrl+C` in the DU terminal**. Wait for `Stopping...` and the shell prompt; confirm DU has exited before stopping FlexRIC and CU.
+4. Press **`Ctrl+C` in the FlexRIC terminal**, then **`Ctrl+C` in the CU terminal**.
+5. Stop the ten core services in reverse order in the diagnostics terminal. WebUI/MongoDB may remain running.
 
 ```bash
 CORE_UNITS=(open5gs-nrfd open5gs-scpd open5gs-udrd open5gs-udmd open5gs-ausfd open5gs-pcfd open5gs-nssfd open5gs-upfd open5gs-smfd open5gs-amfd)
@@ -255,19 +271,19 @@ for unit in open5gs-amfd open5gs-smfd open5gs-upfd open5gs-nssfd open5gs-pcfd op
 done
 remaining=0
 if pgrep -a -x 'odu|nearRT-RIC|ocu|xapp_oran_moni'; then
-  printf 'FAIL: 以上进程仍在运行\n'
+  printf 'FAIL: The processes above are still running\n'
   remaining=1
 fi
 for unit in "${CORE_UNITS[@]}"; do
   if systemctl is-active --quiet "$unit"; then
-    printf 'FAIL: %s 仍 active\n' "$unit"
+    printf 'FAIL: %s is still active\n' "$unit"
     remaining=1
   fi
 done
 [ "$remaining" -ne 0 ] || printf 'Stopped: DU / RIC / CU / xApp / 10 core units\n'
 ```
 
-若需要完全停机，最后执行 `sudo docker stop open5gs-mongo`，以及已安装的 `sudo systemctl stop open5gs-webui`；不要删除容器或 volume。仅失败时展开当前日志，unit 换成失败的服务：
+For a full shutdown, finish with `sudo docker stop open5gs-mongo` and `sudo systemctl stop open5gs-webui` if that unit is installed. Do not delete containers or volumes. Expand the current logs only after a failure, replacing the unit below with the failed service:
 
 ```bash
 sudo journalctl -u open5gs-amfd --since '5 minutes ago' --no-pager -n 30
@@ -275,4 +291,4 @@ sudo grep -Ei 'E2|subscription|decode|error|failure' /tmp/du.log | tail -n 30
 tail -n 30 /tmp/flexric-ric.log
 ```
 
-RF 错误和 USB 问题按[完整流程](full_reproduction_runbook.md#9-confirm-rf-and-start-the-du)检查；运行中不要 probe B210。旧 FlexRIC `1a3903a7` 的本次 Format 4 订阅失败，使用已验证的 `73650812` 及配套库。
+For RF errors and USB issues, follow the [full runbook](full_reproduction_runbook.md#9-confirm-rf-and-start-the-du); do not probe B210 while DU is running. The old FlexRIC `1a3903a7` failed the Format 4 subscription in this test. Use the verified `73650812` build and matching libraries.

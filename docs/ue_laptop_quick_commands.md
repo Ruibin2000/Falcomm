@@ -1,12 +1,12 @@
-# UE laptop 快速指令册
+# UE Laptop Quick Commands
 
-更新：2026-10-07。在 **UE laptop 的同一个 Bash 终端**按顺序执行，保留下面的变量；每步成功再继续。完整说明见 [复现手册第 10–14 节](full_reproduction_runbook.md#10-prepare-a-new-ubuntulinux-laptop)，Spark 启动见 [Spark 快速 CMD](spark_quick_commands.md)。
+Updated: 2026-10-07. Run these steps in order in **one Bash terminal on the UE laptop** and keep the variables defined below. Continue only after each step succeeds. For full instructions, see [Runbook stages 10–14](full_reproduction_runbook.md#10-prepare-a-new-ubuntulinux-laptop); start Spark using [Spark Quick Commands](spark_quick_commands.md).
 
-2026-10-05 已验证单 UE 注册、IPv4 和初次 10 秒 TCP 上行；2026-10-07 已验证 DU 的 FlexRIC KPM 订阅，并收到 gNB-DU UE ID `14` 的五项真实测量值，xApp 正常退出。以下 ping、30 秒上/下行是后续验收指令，不代表本次已测结果。
+The 2026-10-05 session verified single-UE registration, IPv4 connectivity, and an initial 10-second TCP uplink. The 2026-10-07 session verified five DU KPM measurements from a real UE. After the timestamp repair, the latest run received 12 reports for UE ID `7`, with `report_age_us` of **591–796 µs**, and the xApp exited normally. The ping and 30-second uplink/downlink commands below are further acceptance checks, not results demonstrated in this session.
 
-## 1 首次安装与选择 modem
+## 1 Install tools and select the modem
 
-新 laptop 首次安装；已装可跳过：
+Install these tools on a new laptop; skip this if they are already installed:
 
 ```bash
 sudo apt update
@@ -14,9 +14,9 @@ sudo apt install -y modemmanager libqmi-utils minicom iproute2 iperf3 usbutils
 sudo systemctl enable --now ModemManager
 ```
 
-RMU500EK 接 RM500Q-GL、测试 USIM、天线、数据 USB 和辅助电源。已验证 firmware：`RM500QGLABR13A03M4G`。端口缺失见 [驱动检查](software_installation_and_drivers.md#72-kernel-driver-responsibilities)。
+Connect the RM500Q-GL, test USIM, antennas, data USB, and auxiliary power to the RMU500EK. Verified firmware: `RM500QGLABR13A03M4G`. If ports are missing, see [Driver checks](software_installation_and_drivers.md#72-kernel-driver-responsibilities).
 
-定义取值和选择函数一次；存在多个 RM500Q 时必须自己选择：
+Define these value-extraction and modem-selection functions once. If several RM500Q modems are present, select the intended device explicitly:
 
 ```bash
 mm_value() {
@@ -34,15 +34,15 @@ select_rm500q() {
   mapfile -t candidates < <(printf '%s\n' "$listing" |
     awk '/RM500Q/ { print }' | grep -oE '/org/freedesktop/ModemManager1/Modem/[0-9]+')
   case ${#candidates[@]} in
-    0) printf '未发现 RM500Q；检查 USB/驱动后重试。\n'; return 1 ;;
+    0) printf 'No RM500Q found; check USB and drivers before retrying.\n'; return 1 ;;
     1) MODEM=${candidates[0]} ;;
-    *) printf '%s\n' "$listing"; read -r -p '输入目标 RM500Q 的完整 Modem 路径：' MODEM ;;
+    *) printf '%s\n' "$listing"; read -r -p 'Enter the full Modem path of the intended RM500Q: ' MODEM ;;
   esac
   MODEM_KV=$(mmcli -m "$MODEM" -K) || { MODEM=""; return 1; }
   model=$(printf '%s\n' "$MODEM_KV" | mm_value modem.generic.model)
   MODEM_IDENTITY=$(printf '%s\n' "$MODEM_KV" | mm_value modem.generic.device-identifier)
   if [[ "$model" != *RM500Q* ]] || [[ -z "$MODEM_IDENTITY" || "$MODEM_IDENTITY" = -- ]]; then
-    MODEM=""; printf '型号或设备标识不匹配，停止。\n'; return 1
+    MODEM=""; printf 'Model or device identifier does not match; stop here.\n'; return 1
   fi
   printf 'modem=%s model=%s firmware=%s\n' "$MODEM" "$model" \
     "$(printf '%s\n' "$MODEM_KV" | mm_value modem.generic.revision)"
@@ -50,22 +50,22 @@ select_rm500q() {
 select_rm500q
 ```
 
-若 modem 为 disabled：`sudo mmcli -m "$MODEM" --enable`。不要沿用历史 modem/SIM/bearer 编号。
+If the modem is disabled, run `sudo mmcli -m "$MODEM" --enable`. Rediscover modem, SIM, and bearer IDs instead of reusing historical numbers.
 
-## 2 NR SA 与私网小区锁定
+## 2 Configure NR SA and lock the private cell
 
-已有正确设置且已注册时，直接到第 3 步。需要调整时，选择 **实际 `(at)` 端口**：
+If the settings are already correct and the modem is registered, continue to stage 3. Otherwise, select an **actual `(at)` port**:
 
 ```bash
 AT_PORT=$(mmcli -m "$MODEM" | grep -oE 'ttyUSB[0-9]+ \(at\)' | head -1 | awk '{print $1}')
 if [ -n "$AT_PORT" ]; then
   sudo minicom -D "/dev/$AT_PORT" -b 115200
 else
-  printf '未找到 AT 端口，停止并检查 modem ports。\n'
+  printf 'No AT port found; stop and inspect the modem ports.\n'
 fi
 ```
 
-在 minicom 中输入，**不是 Bash 命令**；每次写入都必须返回 `OK`：
+Enter these commands in minicom, **not in Bash**. Each configuration write must return `OK`:
 
 ```text
 AT
@@ -80,15 +80,15 @@ AT+QENG="servingcell"
 AT+C5GREG?
 ```
 
-确认：band 含 78；锁定 `PCI=1 / SSB=649632 / SCS=30 / n78`；serving cell 为 `NR5G-SA / 001,01 / TAC 7`；注册返回 `+C5GREG: 0,1`。`NOCONN` 可表示驻留空闲，以 C5GREG 注册结果为准。**锁定用 SSB 649632，不能换成载波 650000。**
+Confirm that the band selection includes 78, the lock is `PCI=1 / SSB=649632 / SCS=30 / n78`, the serving cell is `NR5G-SA / 001,01 / TAC 7`, and registration reports `+C5GREG: 0,1`. `NOCONN` can indicate an idle, camped state; use C5GREG to confirm registration. **Use SSB ARFCN 649632 for the lock, not carrier ARFCN 650000.**
 
-该 firmware 的 disable mode `2` 禁用 NSA。退出：`Ctrl+A`，再 `X`。关闭重复 AT 会话，保留 ModemManager。
+On this tested firmware, disable mode `2` disables NSA. Exit minicom with `Ctrl+A`, then `X`. Close duplicate AT sessions and leave ModemManager running.
 
-可选重启仅在确有需要时用 `AT+CFUN=1,1`；USB 重枚举后重新执行 `select_rm500q`、发现 AT 端口，再设置/检查上述偏好和锁定。**最终锁定后不再重启 modem。**
+Use the optional reboot command `AT+CFUN=1,1` only when needed. After USB enumeration, run `select_rm500q` again, rediscover the AT port, and reapply or check the preferences and cell lock above. **Do not reboot the modem after the final cell lock.**
 
-## 3 注册确认与 IPv4 连接
+## 3 Check registration and connect IPv4
 
-简短注册确认：
+Show only the registration fields:
 
 ```bash
 mmcli -m "$MODEM" -K | awk -F ':' '
@@ -97,17 +97,17 @@ mmcli -m "$MODEM" -K | awk -F ':' '
 '
 ```
 
-要求 `5gnr / 00101 / home / attached`，state 为 registered 或 connected。随后建立 `internet` **IPv4** PDU：
+Require `5gnr / 00101 / home / attached`, with state registered or connected. Then create an **IPv4** PDU session for `internet`:
 
 ```bash
 sudo mmcli -m "$MODEM" --simple-connect="apn=internet,ip-type=ipv4"
 ```
 
-若失败停止，见 [PDU/IPv4v6 故障记录](troubleshooting/2026-10-05_sa_bringup.md#10-pdu-root-cause-ipv4v6-rejected-by-ocudu)。Spark subscriber 必须为 session type `1`；无需修改 EPS initial bearer 显示的 IPv4v6。
+If this fails, stop and see the [PDU/IPv4v6 troubleshooting record](troubleshooting/2026-10-05_sa_bringup.md#10-pdu-root-cause-ipv4v6-rejected-by-ocudu). The subscriber on Spark must use session type `1`. The EPS initial bearer may still display IPv4v6; that display does not need changing.
 
-## 4 找实际 bearer 和配置专用 WWAN
+## 4 Find the active bearer and configure dedicated WWAN
 
-只从选中 modem 找 **connected + internet** bearer，不使用 EPS initial bearer。多个匹配项时停止，不猜编号：
+Find the **connected + internet** bearer belonging to the selected modem, rather than using the EPS initial bearer. Stop if several bearers match; do not guess an ID:
 
 ```bash
 BEARER=""
@@ -137,13 +137,13 @@ if [ "$discovery_ok" = yes ] && [ ${#matches[@]} -eq 1 ] && \
   printf 'bearer=%s connected=%s suspended=%s if=%s IPv4=%s/%s mtu=%s method=%s\n' \
     "$BEARER" "$UE_CONNECTED" "$UE_SUSPENDED" "$WWAN_IF" "$UE_IP" "$UE_PREFIX" "$UE_MTU" "$UE_METHOD"
 else
-  printf '未取得唯一可用 bearer（发现阶段=%s，匹配数=%s）；停止并检查。\n' "$discovery_ok" "${#matches[@]}"
+  printf 'No unique usable bearer found (discovery=%s, matches=%s); stop and inspect.\n' "$discovery_ok" "${#matches[@]}"
 fi
 ```
 
-要求 `connected=yes / suspended=no / static`。历史值是 `wwan0 / 10.45.0.2/30 / MTU 1400`；实际配置使用刚读取的值。ModemManager 提供 IP 参数，主机仍需设置接口。
+Require `connected=yes / suspended=no / static`. Historical values were `wwan0 / 10.45.0.2/30 / MTU 1400`; configure the interface using the values just read. ModemManager supplies the IP parameters, but the host interface still needs configuration.
 
-以下只用于专用 QMI WWAN。已有 NetworkManager cellular profile 时，先处理它的 WWAN 配置所有权；保留管理 Wi-Fi 与 NetworkManager。默认路由、SSH 管理路径或其他 IPv4 在该接口时，脚本拒绝改动。
+These commands apply only to a dedicated QMI WWAN interface. If a NetworkManager cellular profile is active, first resolve which component owns WWAN configuration; retain management Wi-Fi and NetworkManager. The script refuses changes when the interface carries a default route, the SSH management path, or another IPv4 address.
 
 ```bash
 configure_wwan() {
@@ -174,41 +174,41 @@ if configure_wwan; then
   ip -4 route get 10.45.0.1 from "$UE_IP"
   ip -4 route show default
 else
-  printf 'WWAN 配置未完成；检查 bearer、专用接口与管理路由，不要继续测试。\n'
+  printf 'WWAN configuration is incomplete; check the bearer, dedicated interface, and management routes before testing.\n'
 fi
 ```
 
-要求到 `10.45.0.1` 的 route 使用 `$WWAN_IF` 和 `$UE_IP`；Wi-Fi 默认路由保持。这里只新增私网 host route，不加默认路由、NAT 或 MASQUERADE。
+The route to `10.45.0.1` must use `$WWAN_IF` and `$UE_IP`, with the Wi-Fi default route retained. This adds only a private host route; it does not add a default route, NAT, or MASQUERADE.
 
-## 5 Ping 流量与 KPM
+## 5 Check ping, traffic, and KPM
 
-Ping 仅保留汇总，失败仍可见：
+Show the ping summary while keeping errors visible:
 
 ```bash
 ping -q -I "$WWAN_IF" -c 5 10.45.0.1
 ```
 
-要求 `0% packet loss`。将一行 bearer 中的实际 `UE_IP` 给 Spark 端做 reverse ping；Spark 先启动 `iperf3 -s -B 10.45.0.1`。
+Require `0% packet loss`. Give Spark the actual `UE_IP` from the bearer summary for a reverse ping. Start `iperf3 -s -B 10.45.0.1` on Spark first.
 
-以下 **逐条运行**，末尾保留 sender/receiver 汇总：
+Run these **one at a time**, keeping the final sender/receiver summaries:
 
 ```bash
-# 上行：UE → Spark，30 秒（待验证）
-iperf3 -c 10.45.0.1 -B "${UE_IP:?请使用已配置WWAN的终端}" -t 30 -i 0
+# Uplink: UE -> Spark, 30 seconds (not yet verified)
+iperf3 -c 10.45.0.1 -B "${UE_IP:?Use the terminal where WWAN was configured}" -t 30 -i 0
 
-# 下行：Spark → UE，30 秒（待验证）
-iperf3 -c 10.45.0.1 -B "${UE_IP:?请使用已配置WWAN的终端}" -R -t 30 -i 0
+# Downlink: Spark -> UE, 30 seconds (not yet verified)
+iperf3 -c 10.45.0.1 -B "${UE_IP:?Use the terminal where WWAN was configured}" -R -t 30 -i 0
 ```
 
-时间戳修复后的 KPM 库和 monitor 已安装，并校验与新构建一致。保持 Spark 的 **CU、DU、FlexRIC** 运行，已有 iperf server 可继续使用。在已配置 WWAN 的 UE 终端开始上述 30 秒上行，**Spark 随即运行新安装的约 10 秒 `xapp_oran_moni`**，见 [Spark 安装后复验](spark_quick_commands.md#7a-时间戳修复安装后复验)。要求出现 `report_age_us`、UE ID 与 KPM 值，并正常退出。
+The repaired KPM library and monitor are installed and verified to match the new build. Keep **CU, DU, and FlexRIC** running on Spark; the existing iperf server can stay running. Start the 30-second uplink above in the UE terminal where WWAN was configured, then **immediately run the newly installed `xapp_oran_moni` for about 10 seconds on Spark**. See [Spark verification after installation](spark_quick_commands.md#7a-verify-reports-after-the-timestamp-repair). Require `report_age_us`, a UE ID, KPM values, and a normal exit.
 
-2026-10-07 已收到 UE ID `14` 的五项 DU 测量值；仅 `Successfully subscribed` 不能证明收到数据。时间戳修复后的真实 UE `report_age_us` 和本次 30 秒 iperf 结果仍待复验，也没有新的 ping 或长时稳定性证据；两端记录方向、汇总速率、重传和 Spark RF 错误增长。
+The earlier 2026-10-07 run received measurements for UE ID `14`. After the repair, UE ID `2` and the later UE ID `7` each produced **12 reports**, with `report_age_us` ranges of **499–717 µs** and **591–796 µs**, respectively. Subscription, deletion, and xApp exit all succeeded. An intermediate collection window subscribed successfully but received no UE reports. If the result is `NO_UE`, first confirm registration and that UE traffic covers the collection window. `report_age_us` is report age, not application RTT. Fresh ping results, 30-second application uplink/downlink throughput, reporting-period accuracy, and sustained stability remain unverified. Record direction, summary rates, retransmissions, and growth in Spark RF errors on both sides.
 
-SIM/注册问题可用实际 `(qmi)` 端口做 `qmicli -p` 查询，见 [完整手册第 10 节](full_reproduction_runbook.md#10-prepare-a-new-ubuntulinux-laptop)；不要与 ModemManager 抢占无 proxy 的 QMI 会话。
+For SIM or registration problems, use the actual `(qmi)` port with `qmicli -p`; see [Runbook stage 10](full_reproduction_runbook.md#10-prepare-a-new-ubuntulinux-laptop). Use proxy mode alongside ModemManager rather than competing for a direct QMI session.
 
-## 6 UE 停机
+## 6 Shut down the UE
 
-先 `Ctrl+C` 停止流量。使用同一终端保存的变量，核对同一 modem 后 **先断开 PDU，再只删除本次手工 IP 与 host route**。不要重选首个 modem 或 flush 全接口。
+Stop traffic with `Ctrl+C` first. Use the variables saved in the same terminal and verify the same modem, then **disconnect the PDU session before removing only this run's manual IP address and host route**. Do not reselect the first modem or flush the entire interface.
 
 ```bash
 cleanup_ue() {
@@ -227,10 +227,10 @@ cleanup_ue() {
   if ip -o -4 addr show dev "$WWAN_IF" | awk '{print $4}' | grep -Fxq "$UE_IP/$UE_PREFIX"; then
     sudo ip -4 addr del "$UE_IP/$UE_PREFIX" dev "$WWAN_IF" || return 1
   fi
-  printf 'PDU 已断开，本次手工地址和路由已清理。\n'
+  printf 'PDU disconnected; the manual address and route for this run are removed.\n'
   ip -br -4 addr show dev "$WWAN_IF"
 }
-cleanup_ue || printf '清理未完成；检查同一 modem/接口及命令错误，不要猜接口或执行 flush。\n'
+cleanup_ue || printf 'Cleanup is incomplete; check the same modem and interface and any command errors. Do not guess an interface or flush it.\n'
 ```
 
-变量丢失或 modem 已重启时，先重新确认原设备、接口和本次地址再清理，不能直接执行旧变量命令。可选在断开与清理完成后执行 `sudo mmcli -m "$MODEM" --disable`，随后再拔 RMU。Spark 按 [Spark 快速 CMD](spark_quick_commands.md) 停机。
+If variables were lost or the modem rebooted, reconfirm the original device, interface, and this run's address before cleanup; do not run commands with stale variables. After disconnection and cleanup, optionally run `sudo mmcli -m "$MODEM" --disable`, then unplug the RMU. Shut Spark down using [Spark Quick Commands](spark_quick_commands.md).

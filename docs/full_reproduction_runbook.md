@@ -541,7 +541,7 @@ Initial actual UE reception passed on 2026-10-07: gNB-DU UE F1AP ID `14` produce
 `[LAPTOP]` In the same Bash terminal used to configure WWAN, start the uplink:
 
 ```bash
-iperf3 -c 10.45.0.1 -B "${UE_IP:?请使用已配置WWAN的终端}" -t 30 -i 0
+iperf3 -c 10.45.0.1 -B "${UE_IP:?Use the terminal where WWAN was configured}" -t 30 -i 0
 ```
 
 `[SPARK]` Immediately run the installed xApp in its own terminal, so its approximately 10-second observation window overlaps the traffic. This creates a fresh log and prints a compact result:
@@ -550,16 +550,32 @@ iperf3 -c 10.45.0.1 -B "${UE_IP:?请使用已配置WWAN的终端}" -t 30 -i 0
 KPM_LOG=$(mktemp /tmp/flexric-kpm.XXXXXX.log)
 if /usr/local/bin/flexric/xApp/c/xapp_oran_moni \
   -c /usr/local/etc/flexric/xapp_oran_sm.conf >"$KPM_LOG" 2>&1; then
-  grep -E 'report_age_us|UE ID type|Test xApp run' "$KPM_LOG" | tail -n 15
+  KPM_EXIT=0
 else
+  KPM_EXIT=$?
+fi
+if [ "$KPM_EXIT" -eq 0 ] &&
+   grep -q 'Successfully subscribed to RAN_FUNC_ID 2' "$KPM_LOG" &&
+   grep -q 'E42 SUBSCRIPTION DELETE RESPONSE rx' "$KPM_LOG" &&
+   grep -q 'Test xApp run SUCCESSFULLY' "$KPM_LOG"; then
+  KPM_REPORTS=$(awk '/^KPM-v3 report_age_us/ {n++} END {print n+0}' "$KPM_LOG")
+  KPM_UES=$(awk '/^UE ID type = gNB-DU/ {n++} END {print n+0}' "$KPM_LOG")
+  if [ "$KPM_REPORTS" -gt 0 ] && [ "$KPM_UES" -gt 0 ]; then
+    printf 'KPM: OK (subscription, deletion, exit); UE reports=%s; log=%s\n' "$KPM_REPORTS" "$KPM_LOG"
+    grep -E 'report_age_us|UE ID type' "$KPM_LOG" | tail -n 15
+  else
+    printf 'KPM: OK (subscription, deletion, exit); NO_UE (no UE reports in this run); log=%s\n' "$KPM_LOG"
+    printf 'Confirm UE registration and overlap between traffic and collection.\n'
+  fi
+else
+  printf 'KPM: FAIL (exit=%s; lifecycle checks failed); log=%s\n' "$KPM_EXIT" "$KPM_LOG"
   tail -n 30 "$KPM_LOG"
 fi
-printf 'log=%s\n' "$KPM_LOG"
 ```
 
-Require `report_age_us`, a gNB-DU UE ID and successful xApp exit together. Success without UE reports does not validate the repaired time display; confirm the UE traffic overlaps collection. The current live UE report-age result remains pending. See [Spark step 7a](spark_quick_commands.md#7a-时间戳修复安装后复验) for the two-host sequence and [step 7](spark_quick_commands.md#7-真实-ue-流量与-kpm-验证) for the five-metric log summary.
+Require a positive UE-report count, `report_age_us` and a gNB-DU UE ID together. `NO_UE` means subscription, deletion and exit succeeded but no UE report arrived in this run; confirm UE registration and traffic overlap rather than treating this as a timestamp-repair failure. A repaired live run passed with UE ID `2`, 12 report-age values of **499–717 microseconds** and normal subscription deletion/exit. This verifies the display, not precise clock/delay accuracy. See [Spark step 7a](spark_quick_commands.md#7a-verify-reports-after-the-timestamp-repair) for the two-host sequence and [step 7](spark_quick_commands.md#7-validate-ue-traffic-and-kpm-reports) for the five-metric log summary.
 
-Require actual `UE ID type = gNB-DU` reports with measurement names and values such as `DRB.UEThpUl` and `RRU.PrbTotUl`. Record the current UE ID, direction, application rate and report cadence. Throughput is in kbps, PRB usage in percent, and `DRB.RlcSduDelayDl` in 0.1 ms units. Selected observed samples were UL 14163–14675 kbps, UL PRB 86% and RLC DL delay 1.580–1.730 ms after conversion. The original huge negative indication-latency value is invalid; the [tested repair](troubleshooting/2026-10-07_flexric_latency_fix.md) is installed and needs live UE verification. The new signed `report_age_us` includes processing and queueing time.
+Require actual `UE ID type = gNB-DU` reports with measurement names and values such as `DRB.UEThpUl` and `RRU.PrbTotUl`. Record the current UE ID, direction, application rate and report cadence. Throughput is in kbps, PRB usage in percent, and `DRB.RlcSduDelayDl` in 0.1 ms units. Earlier UE `14` selected samples were UL 14163–14675 kbps, UL PRB 86% and RLC DL delay 1.580–1.730 ms after conversion. Later UE `2` selected samples were UL 11916–11927 kbps, UL PRB 88% and RLC DL delay 1.380–1.440 ms. The [timestamp repair](troubleshooting/2026-10-07_flexric_latency_fix.md) is installed and its live display is verified; signed `report_age_us` includes processing and queueing time.
 
 ## 15. Video experiment (procedure; not yet verified)
 

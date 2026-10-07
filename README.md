@@ -4,7 +4,7 @@ Falcomm is a 5G/AI-RAN experimental platform based on the NVIDIA DGX Spark. **On
 
 **Start here: [Full Reproduction Runbook](docs/full_reproduction_runbook.md)** — restart the installed Spark infrastructure, configure the RMU500EK/RM500Q on a new Ubuntu laptop, register, establish IPv4 data, configure WWAN, test local traffic and shut down. [Troubleshooting and the 2026-10-05 debug record](docs/troubleshooting/2026-10-05_sa_bringup.md) explain the repaired failures.
 
-For daily operation, use the Chinese command booklets: **[Spark quick commands](docs/spark_quick_commands.md)** and **[UE laptop quick commands](docs/ue_laptop_quick_commands.md)**. They show compact confirmations; the full runbook retains detailed diagnostics. The [2026-10-07 FlexRIC record](docs/troubleshooting/2026-10-07_flexric_bringup.md) records the codec/version repair, successful subscription and actual UE measurements.
+For daily operation, use the command booklets: **[Spark quick commands](docs/spark_quick_commands.md)** and **[UE laptop quick commands](docs/ue_laptop_quick_commands.md)**. They show compact confirmations; the full runbook retains detailed diagnostics. The [2026-10-07 FlexRIC record](docs/troubleshooting/2026-10-07_flexric_bringup.md) records the codec/version repair, successful subscription and actual UE measurements.
 
 ## Verified Single-Link Architecture
 
@@ -123,6 +123,8 @@ Confirmed repairs were NRF serving PLMN `999/70` → `001/01`, provisioning the 
 
 On **2026-10-07**, FlexRIC `73650812` registered DU1 and the C xApp subscribed to RAN function ID 2, received all five DU metrics for actual gNB-DU UE ID `14`, then deleted the subscription and exited normally. Selected samples show RLC-derived uplink throughput of **14.163–14.675 Mbit/s** and UL PRB usage of **86%**. These are KPM measurements; a new synchronized application throughput benchmark was not recorded. The earlier pinned `1a3903a7` used a modified KPM ASN.1 codec that failed to decode in OCUDU for Format 4. Updating FlexRIC corrected the subscription failure. See the [FlexRIC bring-up record](docs/troubleshooting/2026-10-07_flexric_bringup.md) for units and the invalid indication-latency display.
 
+After installing the [timestamp repair](docs/troubleshooting/2026-10-07_flexric_latency_fix.md), a later actual UE ID `2` run produced **12 `report_age_us` values from 499 to 717 microseconds**, with normal subscription deletion and exit. Selected UL RLC throughput samples were **11.916–11.927 Mbit/s**, with UL PRB usage **88%**. The repaired display measures age relative to the decoded report timestamp, including processing and queueing; it does not establish pure transport latency or application goodput.
+
 ## Platform and Software Versions
 
 | Component | Recorded configuration |
@@ -163,8 +165,8 @@ docs/
 | [Project Progress and System Configuration](docs/project_progress_and_configuration.md) | Verified architecture, phase status, configuration values and remaining work |
 | [Software Installation, Drivers, and OCUDU Environment](docs/software_installation_and_drivers.md) | Software dependencies, drivers, compiler/build environment and installation issues |
 | [Full Reproduction Runbook](docs/full_reproduction_runbook.md) | Startup, laptop setup, registration, IPv4 data, traffic and shutdown commands |
-| [Spark quick commands](docs/spark_quick_commands.md) | Chinese command booklet for core, CU, FlexRIC, DU, xApp, traffic and shutdown with compact checks |
-| [UE laptop quick commands](docs/ue_laptop_quick_commands.md) | Chinese command booklet for modem selection, SA registration, IPv4 bearer, WWAN and traffic |
+| [Spark quick commands](docs/spark_quick_commands.md) | Command booklet for core, CU, FlexRIC, DU, xApp, traffic and shutdown with compact checks |
+| [UE laptop quick commands](docs/ue_laptop_quick_commands.md) | Command booklet for modem selection, SA registration, IPv4 bearer, WWAN and traffic |
 | [5G SA Bring-up Debug Record, 2026-10-05](docs/troubleshooting/2026-10-05_sa_bringup.md) | Dated evidence, confirmed repairs and troubleshooting decision tree/matrix |
 | [FlexRIC Bring-up Record, 2026-10-07](docs/troubleshooting/2026-10-07_flexric_bringup.md) | Version/codec repair, E2/KPM lifecycle and actual UE metrics |
 | [FlexRIC Timestamp Repair, 2026-10-07](docs/troubleshooting/2026-10-07_flexric_latency_fix.md) | Tested timestamp patch, deployment command and report-age semantics |
@@ -191,7 +193,7 @@ The current Falcomm over-the-air chain uses **UHD and a USRP B210**. ZeroMQ sett
 ## Scope and Limitations
 
 - The verified configuration covers one DU, one B210 and one RM500Q with an initial IPv4 TCP uplink result. Cold-start/new-laptop reproduction, longer uplink, downlink, UDP loss/jitter and video are still validation tasks.
-- FlexRIC E2 Setup, actual UE KPM values and subscription/deletion are verified. Correlation with synchronized application traffic and report timing remain validation tasks. The [timestamp repair](docs/troubleshooting/2026-10-07_flexric_latency_fix.md) is built, tested and installed; live UE report-age values await validation.
+- FlexRIC E2 Setup, actual UE KPM values, the repaired report-age display and subscription/deletion are verified. Correlation with synchronized application traffic, precise timing accuracy and sustained stability remain validation tasks.
 - The 30.72 MS/s, 20-s UHD benchmark is a radio/USB stress test. The current OCUDU configuration uses a 23.04 MS/s sample rate.
 - The NVIDIA kernel, PREEMPT_RT status, and system-default GCC configuration are retained to preserve the reproducible baseline.
 - `ocudu_performance` and privileged RAN launch were applied. Recurring RF failures improved; long-duration stability is still open.
