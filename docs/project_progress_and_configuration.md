@@ -1,6 +1,6 @@
 # Project Progress and System Configuration
 
-Last updated: **2026-10-07**. The 2026-10-05 session established initial UE application traffic. The 2026-10-07 session installed FlexRIC and verified E2 Setup, actual UE KPM reports and subscription/deletion on the existing UHD DU. Cold-start/new-laptop data reproduction and synchronized traffic characterization remain pending.
+Last updated: **2026-10-07**. The 2026-10-05 session established initial UE application traffic. The 2026-10-07 session installed FlexRIC and verified E2 Setup, actual UE KPM reports and subscription/deletion on the existing UHD DU. Two additional Open Cells SIMs have been personalized and verified in Quectel modems, including SIM2 in a second physical modem; new-subscriber registration and dual-DU operation remain pending. Cold-start/new-laptop data reproduction and synchronized traffic characterization also remain pending.
 
 ## Current verified single-link architecture
 
@@ -41,12 +41,12 @@ The tested application path is **laptop ↔ Spark over private 5G**. Management 
 | 2 | OCUDU build | Verified |
 | 3 | Single CU/DU / N2 / F1 / Open5GS | Verified |
 | 4 | RM500Q SA registration, authentication, IPv4 PDU, WWAN, local data | Verified in initial session |
-| 5 | Second DU / second radio / second UE | Future work |
+| 5 | Second DU / second radio / second UE | SIM provisioning and both modem UICC checks complete; matching Open5GS records, DU2/radio deployment and dual-link end-to-end validation pending |
 | 6 | Host realtime work | Performance script and privileged launch applied; sustained stability open |
 | 7–8 | FlexRIC / KPM xApp | Installed; E2 Setup, actual UE reports, repaired timestamp display, subscription and deletion verified |
 | 9–11 | MPTCP / RIC-assisted control / AI steering | Future work |
 
-Next, correlate KPM with synchronized application traffic, reproduce the single-link result after a cold start and on the new laptop, characterize traffic and freeze Baseline v1 before adding the second path or active steering.
+Next, prepare the two matching Open5GS subscribers and validate the intended CU + DU1 + DU2 paths using the [SIM and Dual-UE Guide](sim_provisioning_and_dual_ue.md). Preserve the working single-link configuration while doing this. KPM/application correlation, cold-start/new-laptop reproduction, traffic characterization and Baseline v1 acceptance remain separate work before active steering.
 
 ## Platform and prior build evidence
 
@@ -221,6 +221,28 @@ MongoDB is separate from systemd Open5GS services, maps localhost `27017` and re
 
 The inspected persistent TUN setup is `/etc/systemd/network/99-open5gs.netdev` (`ogstun`, `Kind=tun`) and `99-open5gs.network` (IPv4/IPv6 addresses/routes, MTU 1400). The UPF unit requests `systemd-networkd`. These files describe reboot recovery; a new cold reboot was not executed during the documentation update.
 
+### Provisioned Open Cells SIMs and dual-UE preparation
+
+The existing single-link test subscriber `001010000000001` remains the verified baseline. The two additional cards below have completed personalization and local authentication; their matching Open5GS records and real 5G registration are the next work.
+
+| Intended path | Card | ICCID | IMSI | MSISDN / SPN | Protected local credentials |
+|---|---|---|---|---|---|
+| UE1 / DU1 | `OC011830` | `89860061100000000830` | `001010000000101` | `00000101` / `OpenCells101` | `~/sim_du1_credentials.txt` |
+| UE2 / DU2 | `OC011831` | `89860061100000000831` | `001010000000102` | `00000102` / `OpenCells102` | `~/sim_du2_credentials.txt` |
+
+Both use MCC `001`, MNC `01` and PLMN `00101`, with independent 128-bit K/OPc pairs stored in permission-600 files outside Git. The secrets were written to the corresponding physical card; they are not derived from IMSI or ICCID and cannot normally be read back from the USIM. The corresponding Open5GS record must use that same card's pair.
+
+ACS ACR39U `072f:b100`, PC/SC/libccid and the rebuilt `program_uicc_pcsc` utility successfully read and programmed both cards. Both Milenage tests succeeded at programmer SQN **64** and reported an HSS reference SQN of **96**. Verify the installed Open5GS SQN representation before configuring this value, and avoid unnecessary repeat authentication because it advances the SIM SQN. Setup, exact commands and troubleshooting are in [SIM Provisioning and Dual-UE Preparation](sim_provisioning_and_dual_ue.md).
+
+| Physical modem | Evidence |
+|---|---|
+| Quectel #1, previously observed IMEI `863305041978437` | SIM1 ready in RM500QGL_VH; SIM2 also passed an initial check in this unit |
+| Quectel #2, IMEI `863305041980706` | SIM2 ready in a second physical RM500QGL_VH |
+
+Both cards showed the intended IMSI/ICCID/SPN, preferred PLMN `00101` with LTE + 5G NR, and ready USIM applications/personalization with PIN1 disabled. At the SIM2 check, the new modem was searching with packet service detached; this is not a SIM-readiness failure and does not prove private-cell registration. Its reported 88% signal quality does not establish reception of the target cell. A carrier-profile difference (`Volte_OpenMkt-Commercial-CMCC` versus a previously observed `ROW_Commercial`) is a later registration diagnostic if cell, band and subscriber checks pass; no profile change has been made.
+
+The intended architecture is SIM1 → Quectel #1 → DU1 and SIM2 → Quectel #2 → DU2, with a shared CU and Open5GS. Each UE must obtain its own PDU session and laptop WWAN/IP path before MPTCP combines the transport paths. A shared PLMN does not enforce SIM-to-DU assignment; validate cell selection and the actual serving cell. DU2, simultaneous registration and the two IP paths are not yet verified. Existing DU1 E2/KPM reception remains complete; dual-DU/per-UE FlexRIC collection is the later extension.
+
 ### Socket layout
 
 | Interface | Local endpoints |
@@ -256,6 +278,8 @@ A later installed-monitor run verified the repaired timestamp display with actua
 
 Kernel replacement, PREEMPT_RT, boot parameters, CPU isolation, IRQ pinning and hugepage changes were not part of this repair. Earlier privilege warnings alone were non-blocking; recurring RF realtime failures required host tuning. Check runtime settings after reboot and monitor sustained error growth.
 
-Next sequence: synchronized KPM/application traffic correlation → cold-start/new-laptop reproduction → 30–60-second uplink → downlink → UDP 2/4/6/8/10 Mbit/s and jitter/loss → video/latency/QoE → freeze Single-Link Baseline v1 → second independent path → independent path verification → MPTCP → AI predictor/steering → blockage/QoE experiments.
+Next dual-link sequence: add/verify both matching Open5GS records (SST 1, `internet`, IPv4 type 1 and checked SQN representation) → prepare distinct DU/cell/radio identities and CU + DU1 + DU2 → confirm each modem's intended cell and registration → independent PDU sessions, WWAN interfaces and IP paths → MPTCP → extend verified DU1 FlexRIC collection to per-DU/per-UE telemetry → AI predictor/steering → blockage/QoE experiments.
+
+Single-link acceptance continues alongside that preparation: synchronized KPM/application correlation, cold-start/new-laptop reproduction, 30–60-second uplink, downlink, UDP 2/4/6/8/10 Mbit/s and jitter/loss, video/latency/QoE, and a frozen Single-Link Baseline v1. SIM preparation alone does not validate these application tests or the dual RAN.
 
 Follow the [Full Reproduction Runbook](full_reproduction_runbook.md), or its [Spark](spark_quick_commands.md) and [UE laptop](ue_laptop_quick_commands.md) command summaries. Shutdown order is traffic/xApp → PDU → laptop WWAN → DU → FlexRIC → CU → 5GC → optional MongoDB. Check runtime state before operation; keep SIM secrets and raw INFO logs out of Git.

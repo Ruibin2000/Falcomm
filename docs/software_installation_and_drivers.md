@@ -1,6 +1,6 @@
 # Software Installation, Drivers, and OCUDU Environment
 
-Updated: 2026-10-07. This document records software dependencies, device drivers and builds for DGX Spark and the UE laptop. The OCUDU/Open5GS baseline comes from the 2026-10-05 deployment; section 8 records the FlexRIC build and installation completed on 2026-10-07.
+Updated: 2026-10-07. This document records software dependencies, device drivers and builds for DGX Spark and the UE laptop. The OCUDU/Open5GS baseline comes from the 2026-10-05 deployment; section 8 records the FlexRIC build and installation completed on 2026-10-07. Section 7.4 adds the completed Open Cells PC/SC provisioning environment and Quectel card checks for the two new UE SIMs.
 
 For experiment startup, modem registration, PDU sessions, traffic, and shutdown, use the [Full Reproduction Runbook](full_reproduction_runbook.md). Executable CU/DU and core configuration values are recorded in [Project Progress](project_progress_and_configuration.md#configuration-records); registration and data-session failures are in the [2026-10-05 debug record](troubleshooting/2026-10-05_sa_bringup.md).
 
@@ -302,6 +302,8 @@ The inspected `.netdev` defines `Name=ogstun`, `Kind=tun`. The `.network` matche
 
 PLMN alignment across NRF/AMF, the subscriber database, and IPv4 session selection are covered in the configuration record and runbook. WebUI is an optional administration component; an existing WebUI installation is not evidence that all runtime SA functions are ready.
 
+The earlier working subscriber is IMSI `001010000000001`. The newly programmed Open Cells cards use `001010000000101` and `001010000000102`; adding their matching subscriber records is the next required core setup step, not a completed installation result. Use the respective protected `~/sim_du1_credentials.txt` and `~/sim_du2_credentials.txt` files for K/OPc, with SST 1, DNN `internet`, and IPv4 session type 1. The programming test suggested SQN 96 for each card; verify the installed Open5GS administration interface and database representation before setting it. See [Open5GS subscriber preparation](sim_provisioning_and_dual_ue.md#prepare-open5gs-subscribers). Preserve the existing subscriber and MongoDB volume.
+
 ## 7. UE laptop software and Quectel drivers
 
 ### 7.1 Install userspace tools
@@ -364,6 +366,51 @@ If `modinfo` reports a missing module, inspect that laptop's matching kernel-mod
 The tested firmware is `RM500QGLABR13A03M4G`. Older `AT+QCFG="nwscanmode"` / `AT+QCFG="band"` commands returned ERROR; the working preference commands use `QNWPREFCFG`. This was a firmware-command difference, not proof of a Linux driver fault. The full runbook contains the tested NR/SA configuration sequence.
 
 Repeated USB disconnects require inspection of cables, power, enumeration and modem state. The record did not isolate a universal cause or establish a required autosuspend change. After a modem reboot, rediscover IDs and ports. QMI queries alongside ModemManager use proxy mode (`qmicli -p`), and concurrent programs must not hold the same AT port.
+
+### 7.4 Open Cells SIM provisioning environment
+
+The ACS ACR39U reader (`072f:b100`) was recognized by Ubuntu and accessed both full USIM applications through PC/SC and libccid. The tested PC/SC packages were installed with:
+
+`[PROVISIONING LAPTOP]`
+
+```bash
+sudo apt install -y pcscd pcsc-tools libccid libpcsclite-dev
+systemctl status pcscd --no-pager
+lsusb
+pcsc_scan
+```
+
+`pcscd` was active; `pcsc_scan` reported `Card inserted` and ATR `3B 9F 95 80 1F C7 80 31 A0 73 B6 A1 00 67 CF 32 11 B2 52 C6 79 F3`. The ATR database label `open5gs (Telecommunication)` is an identification hint, not proof that an Open5GS subscriber exists. The clean-Ubuntu prerequisite list, reader checks, original card values and full procedure are in [Open Cells SIM Provisioning and Dual UE Preparation](sim_provisioning_and_dual_ue.md).
+
+During setup, HTTP port 80 requests to Ubuntu archive mirrors timed out while `curl -4 -I --max-time 10 https://archive.ubuntu.com/ubuntu/` returned HTTP 200. Changing the Ubuntu archive/security source URIs to `https://archive.ubuntu.com/ubuntu/` and `https://security.ubuntu.com/ubuntu/` allowed `sudo apt update` to finish. This was a network-path issue, not a reader or PC/SC failure.
+
+The original Open Cells download endpoint had an expired TLS certificate during setup. The source was obtained from [UICC GUI Sim Programmer](https://github.com/DanieleRiccobene/UICC-GUI-Sim-Programmer), whose repository includes the Open Cells CLI and PC/SC build target. The tested directory was `~/UICC-GUI-Sim-Programmer/uicc_v3.3`; the CLI was rebuilt locally:
+
+```bash
+cd ~/UICC-GUI-Sim-Programmer/uicc_v3.3
+rm -f program_uicc_pcsc
+make program_uicc_pcsc
+```
+
+The recorded Makefile command was:
+
+```bash
+g++ --std=c++11 -g3 -DPCSC \
+  -I. -I/usr/include/PCSC -Wall program_uicc.c \
+  -L/lib/pcsc/drivers/ifd-ccid.bundle/Contents/Linux \
+  -lccid -o program_uicc_pcsc
+```
+
+The executable initially could not resolve `libccid.so`. Commands succeeded with the reader port `usb:072f/b100` and a per-command library path; the initial card read uses no programming or authentication arguments:
+
+```bash
+sudo env LD_LIBRARY_PATH=/lib/pcsc/drivers/ifd-ccid.bundle/Contents/Linux \
+  ./program_uicc_pcsc --port usb:072f/b100
+```
+
+Both cards were subsequently personalized for PLMN `00101`: `OC011830` as IMSI `001010000000101`, and `OC011831` as `001010000000102`. Independently generated K/OPc pairs were stored in the respective protected home-directory files with mode 600. Both Milenage tests succeeded at SQN 64 and suggested core SQN 96. Both cards were verified through Quectel RM500QGL; SIM2 also passed in a second physical modem. These checks establish SIM provisioning and ready USIM applications. The two new SIMs have not yet passed end-to-end registration/PDU setup with the target RAN/Core.
+
+The newer modem's `searching`/`detached` state and approximately 88% signal quality do not establish private-cell registration. Its `Volte_OpenMkt-Commercial-CMCC` carrier profile differs from a prior `ROW_Commercial` session; leave profiles unchanged during the completed UICC checks and investigate only if registration still fails after RAN, band/cell and subscriber settings are verified. See [Quectel verification and safe SIM swaps](sim_provisioning_and_dual_ue.md#verify-the-cards-through-quectel).
 
 ## 8 FlexRIC installation on Spark
 
@@ -450,6 +497,12 @@ Require identical hashes for the pair, not a fixed hash across builds. The runti
 | KPM Format 4 decode failure and RIC assertion | Old `1a3903a7` compiled a modified KPM ASN.1 codec | Install `73650812` from `build-ocudu` with `KPM_V3_00`; live subscription/deletion then passed |
 | xApp exits after about 10 seconds | Expected behavior of the `73650812` C monitor example | Look for successful subscription, deletion response and `Test xApp run SUCCESSFULLY` |
 | Huge negative KPM indication latency | Timestamp word-order and NTP/Unix conversion problems | [Repair built/tested/installed](troubleshooting/2026-10-07_flexric_latency_fix.md); actual UE `2` produced 12 report ages of 499–717 microseconds with normal exit |
+| Ubuntu archive HTTP requests timed out | HTTPS archive request returned HTTP 200 | Changed the relevant archive/security source URIs to HTTPS; APT update completed |
+| Original Open Cells download had an expired TLS certificate | Source acquired from the GitHub repository | Rebuilt the local `uicc_v3.3` PC/SC CLI; preserve certificate verification |
+| `program_uicc_pcsc` cannot load `libccid.so` | Library existed under the PC/SC driver bundle | Pass its directory through `sudo env LD_LIBRARY_PATH=...` for this command |
+| `No ADM code of 8 figures, can't program the UICC` during initial read | No write/authentication arguments supplied; identities readable | Expected read-only message; add write arguments only for deliberate provisioning |
+| Ready USIM but modem searching/detached | Both cards passed programming authentication and Quectel UICC checks | Provision matching core subscribers and validate target-cell registration; signal quality alone is insufficient |
+| Quectel carrier configuration differs | Newer unit showed `Volte_OpenMkt-Commercial-CMCC`; prior session showed `ROW_Commercial` | Future registration diagnostic after cell settings and subscribers are correct; no profile change performed |
 
 A successful build or driver probe does not establish SA registration or a usable PDU session. The 2026-10-05 NRF PLMN, subscriber, IPv4v6 and WWAN issues are documented separately in the dated debug record.
 
@@ -462,5 +515,7 @@ A successful build or driver probe does not establish SA registration or a usabl
 - [ ] Open5GS package version, service files and persistent TUN configuration inspected.
 - [ ] UE laptop detects the modem's AT, QMI and network interfaces with the expected drivers.
 - [ ] FlexRIC revision/options recorded; installed KPM library matches `build-ocudu` and configs reference the installed service directory.
+
+The completed SIM setup adds the ACR39U/PC/SC environment, local PC/SC utility build, two independently provisioned and authenticated cards, and Quectel USIM verification. For reproduction, also verify credential-file mode 600 and the card-to-IMSI assignment using the [SIM guide](sim_provisioning_and_dual_ue.md#sim-assignments). The new `...101`/`...102` Open5GS subscriber records, local SQN handling, two UE registrations, DU2 operation, two PDU/WWAN paths and MPTCP remain next steps.
 
 Continue with the [Full Reproduction Runbook](full_reproduction_runbook.md) or the [Spark](spark_quick_commands.md) and [UE laptop](ue_laptop_quick_commands.md) quick commands. Actual UE KPM reception passed on 2026-10-07. The timestamp display repair is applied, built, installed and verified with actual UE reports. Precise timestamp/delay accuracy, synchronized application/KPM characterization, AI/CUDA development and MPTCP application tooling remain future work.

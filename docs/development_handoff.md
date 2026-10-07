@@ -1,12 +1,16 @@
 # Development Handoff
 
-Updated: 2026-10-07. Continue from the working **single-link 5G SA IPv4 baseline with actual UE KPM reception through FlexRIC verified**. Read [Progress and Configuration](project_progress_and_configuration.md), the [Full Reproduction Runbook](full_reproduction_runbook.md), and the [FlexRIC record](troubleshooting/2026-10-07_flexric_bringup.md). Daily commands are summarized separately for [Spark](spark_quick_commands.md) and the [UE laptop](ue_laptop_quick_commands.md).
+Updated: 2026-10-07. Continue from the working **single-link 5G SA IPv4 baseline with actual UE KPM reception through FlexRIC verified**, plus completed two-SIM provisioning and modem UICC preparation. Read [Progress and Configuration](project_progress_and_configuration.md), the [Full Reproduction Runbook](full_reproduction_runbook.md), the [FlexRIC record](troubleshooting/2026-10-07_flexric_bringup.md), and [SIM Provisioning and Dual-UE Preparation](sim_provisioning_and_dual_ue.md). Daily commands are summarized separately for [Spark](spark_quick_commands.md) and the [UE laptop](ue_laptop_quick_commands.md).
 
 ## Achieved and pending
 
 The reported experiment established private n78 detection, PRACH/PUSCH CRC OK, SA registration/authentication, packet attachment, IPv4 PDU setup, a connected static bearer, manually configured WWAN, and laptop-to-Spark application traffic. The first 10-second TCP uplink was sender 6.29 Mbit/s / receiver 5.09 Mbit/s, sender Retr 0. Sustained throughput, downlink, UDP and live video are not yet validated.
 
-The 2026-10-07 session added FlexRIC, verified DU E2 Setup, and completed the C KPM xApp subscription and deletion. A later run received all five actual DU metrics for UE F1AP ID `14`: selected UL throughput samples were 14.163–14.675 Mbit/s at the RLC measurement layer, with UL PRB usage 86%. Next acceptance work is synchronized KPM/application traffic correlation, cold-start/new-laptop reproducibility and traffic characterization. Dual FR1/FR3 paths, AI prediction and MPTCP steering remain future work; freeze the single-link baseline before adding a second path or active steering.
+The 2026-10-07 session added FlexRIC, verified DU E2 Setup, and completed the C KPM xApp subscription and deletion. A later run received all five actual DU metrics for UE F1AP ID `14`: selected UL throughput samples were 14.163–14.675 Mbit/s at the RLC measurement layer, with UL PRB usage 86%. Next acceptance work is synchronized KPM/application traffic correlation, cold-start/new-laptop reproducibility and traffic characterization. Dual FR1/FR3 operation, AI prediction and MPTCP steering remain future work; preserve and document the single-link baseline while preparing the second path.
+
+Phase 5 preparation has advanced: Open Cells `OC011830` is personalized as IMSI `001010000000101` / ICCID `89860061100000000830` / `OpenCells101` / MSISDN `00000101`; `OC011831` is `001010000000102` / `89860061100000000831` / `OpenCells102` / `00000102`. Both use PLMN `00101`, passed Milenage at SQN **64** with HSS reference **96**, and showed ready USIM applications through Quectel. SIM2 was checked first in the original modem, then in the second physical RM500QGL_VH, IMEI `863305041980706`; the original unit's previously observed IMEI is `863305041978437`.
+
+This completes SIM/modem preparation, not new-subscriber registration. Matching Open5GS records, SQN representation checks, DU2/radio deployment and simultaneous end-to-end links remain pending. The intended SIM1 → modem #1 → DU1 and SIM2 → modem #2 → DU2 paths share CU/Open5GS, then expose two laptop WWAN/IP paths for MPTCP. Shared PLMN `00101` does not automatically enforce those SIM-to-DU associations; verify cell selection and the actual serving cell.
 
 ## Stable infrastructure facts
 
@@ -35,6 +39,8 @@ The current CU has an explicit `ngu` bind; it was not proven necessary as a root
 | Recurring RF underflow/late | OCUDU host performance script Y/Y/Y and privileged RAN launch |
 | Static bearer connected but no WWAN IP | Actual bearer IP/prefix/MTU applied to laptop interface |
 | KPM Format 4 subscription fails, RIC asserts, xApp times out | `1a3903a7` modified ASN.1 codec replaced by standard codec in `73650812`; subscription/deletion then passed |
+| SIM setup APT HTTP timeouts | HTTPS Ubuntu archive/security sources worked; this was separate from reader/PC/SC operation |
+| `program_uicc_pcsc` cannot load `libccid.so` | Command-local `LD_LIBRARY_PATH=/lib/pcsc/drivers/ifd-ccid.bundle/Contents/Linux` supplied the existing driver library |
 
 Private QSCAN and PUSCH CRC OK at 20–33 dB SINR established usable downlink acquisition and uplink with RX gain 40. The unsupported IMS request was not the `internet` failure. Do not reopen these diagnoses without contradictory new evidence.
 
@@ -47,8 +53,8 @@ Private QSCAN and PUSCH CRC OK at 20–33 dB SINR established usable downlink ac
 4. Preserve the NVIDIA kernel, compiler defaults, boot parameters and current working RAN configuration. No PREEMPT_RT, CPU isolation, IRQ or hugepage changes without a specific evidenced need.
 5. The recorded performance script already sets 20 performance governors, disables KMS polling and configures four network-buffer values at 33554432. Check after reboot. CU/DU launch with sudo; recurring RF failures remain a monitoring issue.
 6. Check band, carrier/SSB, gain, serial and authorized lab conditions before RF startup. Never probe/benchmark B210 while DU owns it. Gain values are not calibrated dBm.
-7. Never infer Ki/OP/OPc from IMSI; keep credentials, authentication vectors and derived RAN keys out of Git. Sanitize INFO logs.
-8. Dynamically discover modem, SIM, bearer, QMI/AT port, WWAN interface and allocated UE address. QMI uses proxy. Query the active bearer rather than EPS initial-bearer display.
+7. Never infer authentication secrets (Ki/K, OP or OPc) from IMSI or ICCID; keep credentials, authentication vectors and derived RAN keys out of Git. The new cards' independent pairs are in `~/sim_du1_credentials.txt` and `~/sim_du2_credentials.txt`, permission 600; never cross-copy them between subscriber `...101` and `...102`. Preserve the files because the secrets cannot normally be read back from the USIM. Avoid unnecessary repeat Milenage tests, which advance SQN. Sanitize INFO logs.
+8. Dynamically discover modem, SIM, bearer, QMI/AT port, WWAN interface and allocated UE address. With two modems, verify equipment ID and actual SIM IMSI instead of selecting the first `mmcli -L` result. QMI uses proxy. Query the active bearer rather than EPS initial-bearer display. For SIM swaps, disable the selected modem and power it off before changing the card, then rediscover it after reconnection.
 9. Keep laptop Wi-Fi for management. Local Spark application traffic requires neither Internet NAT nor a laptop default-route change.
 10. Record tests by direction, duration, rate, retransmission/jitter/loss and concurrent RF-error growth. Do not present first TCP success as sustained performance.
 11. Stop traffic and let the xApp delete its subscription, then release PDU/laptop configuration, stop DU, FlexRIC, CU and core. Keep MongoDB data; optional/legacy services need explicit cleanup for full shutdown.
@@ -57,7 +63,11 @@ Private QSCAN and PUSCH CRC OK at 20–33 dB SINR established usable downlink ac
 
 ## Next session
 
-Repeat the approximately 10-second C KPM xApp during a measured private traffic run, recording current UE ID, direction, application rate, duration and report timing together. Initial real UE metric reception is already verified. Continue with cold-start/new-laptop reproduction → 30–60-second TCP uplink → TCP downlink → UDP 2/4/6/8/10 Mbit/s → jitter/loss and DU-error observation → camera/video and latency/QoE → freeze Single-Link Baseline v1 → second path → MPTCP → AI predictor → active steering → blockage/QoE comparison.
+Prepare the two new subscribers using [SIM Provisioning and Dual-UE Preparation](sim_provisioning_and_dual_ue.md). Add/verify `001010000000101` with the pair from `~/sim_du1_credentials.txt` and `001010000000102` with the pair from `~/sim_du2_credentials.txt`; use SST 1, DNN `internet` and IPv4 session type 1. Check the installed Open5GS SQN representation before applying the programmer's reference **96**, and preserve the verified single-link subscriber `001010000000001`.
+
+Then prepare distinct DU/cell/radio identities and CU + DU1 + DU2, confirm each modem registers through its intended cell, establish two independent PDU sessions and laptop WWAN/IP paths, and test MPTCP. Extend the already verified DU1 FlexRIC/KPM collection to both DU/UE identities after dual-link reception works; AI prediction, active steering and blockage/QoE comparison follow later.
+
+Continue single-link acceptance separately: repeat the roughly 10-second KPM xApp during measured private traffic and record UE ID, direction, application rate, duration and report timing together. Cold-start/new-laptop reproduction, 30–60-second TCP uplink, TCP downlink, UDP 2/4/6/8/10 Mbit/s, jitter/loss and DU-error observation, camera/video and latency/QoE remain open before freezing Single-Link Baseline v1. Existing DU1 real UE metric reception is already verified.
 
 The original example's huge negative `KPM ... ind_msg latency` is invalid. The [timestamp repair](troubleshooting/2026-10-07_flexric_latency_fix.md) is applied to local FlexRIC source, rebuilt, tested and installed; do not discard these local source changes when switching commits. It normalizes v3 ASN timestamps to Unix microseconds and prints signed `report_age_us`. Installed KPM library and `xapp_oran_moni` match the repaired build. Following the initial preview without UE indications, an actual UE ID `2` run produced 12 report-age values of **499–717 microseconds** and completed subscription deletion/exit normally. Live time display is verified; precise delay accuracy and synchronized application performance remain open. Follow [Spark step 7a](spark_quick_commands.md#7a-verify-reports-after-the-timestamp-repair) for repeat runs. Selected UE `2` DL RLC delay samples 13.80–14.40 in 0.1 ms units mean **1.380–1.440 ms**; UE IDs are not fixed.
 

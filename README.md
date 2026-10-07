@@ -1,10 +1,12 @@
 # Falcomm
 
-Falcomm is a 5G/AI-RAN experimental platform based on the NVIDIA DGX Spark. **One private 5G SA link carried application traffic on 2026-10-05; OCUDU DU1 connected to FlexRIC and delivered actual UE KPM reports to the C xApp on 2026-10-07.** The longer-term objective is dual independent radio paths with FlexRIC telemetry, AI channel/rate prediction, and MPTCP video steering.
+Falcomm is a 5G/AI-RAN experimental platform based on the NVIDIA DGX Spark. **One private 5G SA link carried application traffic on 2026-10-05; OCUDU DU1 connected to FlexRIC and delivered actual UE KPM reports to the C xApp on 2026-10-07.** Two Open Cells SIMs have now been provisioned and verified in Quectel modems, including SIM2 in a second physical modem. Their Open5GS subscriber preparation and dual-DU end-to-end registration remain pending. The longer-term objective is dual independent radio paths with FlexRIC telemetry, AI channel/rate prediction, and MPTCP video steering.
 
 **Start here: [Full Reproduction Runbook](docs/full_reproduction_runbook.md)** — restart the installed Spark infrastructure, configure the RMU500EK/RM500Q on a new Ubuntu laptop, register, establish IPv4 data, configure WWAN, test local traffic and shut down. [Troubleshooting and the 2026-10-05 debug record](docs/troubleshooting/2026-10-05_sa_bringup.md) explain the repaired failures.
 
 For daily operation, use the command booklets: **[Spark quick commands](docs/spark_quick_commands.md)** and **[UE laptop quick commands](docs/ue_laptop_quick_commands.md)**. They show compact confirmations; the full runbook retains detailed diagnostics. The [2026-10-07 FlexRIC record](docs/troubleshooting/2026-10-07_flexric_bringup.md) records the codec/version repair, successful subscription and actual UE measurements.
+
+For the new cards, follow [SIM Provisioning and Dual-UE Preparation](docs/sim_provisioning_and_dual_ue.md): reader setup, personalization, authentication checks, modem verification, and the remaining Open5GS/dual-link work.
 
 ## Verified Single-Link Architecture
 
@@ -19,6 +21,18 @@ CU-to-AMF N2 carries access signalling; SMF controls the UPF over N4/PFCP. The t
 The verified telemetry connection is `OCUDU DU1 ↔ E2 ↔ FlexRIC ↔ KPM xApp`. E2 Setup, KPM subscription, actual gNB-DU UE reports and subscription deletion passed.
 
 ## Target Architecture
+
+The next deployment uses two separate UEs/subscribers on the same laptop, each with its own SIM, modem, and intended DU path:
+
+```text
+OC011830 / IMSI 001010000000101 → Quectel #1 → DU1 ─┐
+                                                  ├→ shared CU → Open5GS / UPF
+OC011831 / IMSI 001010000000102 → Quectel #2 → DU2 ─┘
+
+UE laptop: two independent WWAN interfaces / IP paths → later MPTCP
+```
+
+Both cards use PLMN `00101`, but have independent K/OPc pairs. The shared PLMN does not force SIM1 onto DU1 or SIM2 onto DU2; cell selection and the observed serving cell must establish that intended association. The two-modem/two-DU RAN and independent IP paths have not yet been validated. MPTCP will combine transport paths after both UEs have working PDU sessions; it does not merge their RAN/core subscriber identities. The FR1/FR3 research design below remains the longer-term target.
 
 ```mermaid
 flowchart LR
@@ -125,6 +139,10 @@ On **2026-10-07**, FlexRIC `73650812` registered DU1 and the C xApp subscribed t
 
 After installing the [timestamp repair](docs/troubleshooting/2026-10-07_flexric_latency_fix.md), a later actual UE ID `2` run produced **12 `report_age_us` values from 499 to 717 microseconds**, with normal subscription deletion and exit. Selected UL RLC throughput samples were **11.916–11.927 Mbit/s**, with UL PRB usage **88%**. The repaired display measures age relative to the decoded report timestamp, including processing and queueing; it does not establish pure transport latency or application goodput.
 
+Open Cells **OC011830** now holds IMSI `001010000000101` / `OpenCells101`; **OC011831** holds IMSI `001010000000102` / `OpenCells102`. Both passed Milenage authentication at programmer SQN **64**, with a reported HSS reference SQN **96**, and both Quectel USIM applications were ready. SIM2 was also verified in the second physical RM500QGL_VH, IMEI `863305041980706`; the first unit's previously observed IMEI was `863305041978437`. These are SIM/UICC checks, not successful private-network registration. The verified single-link subscriber remains IMSI `001010000000001`.
+
+Authentication secrets stay in local permission-600 files `~/sim_du1_credentials.txt` and `~/sim_du2_credentials.txt`, outside Git. Next, create or verify the two matching Open5GS subscriber records with SST 1, DNN `internet`, and IPv4 session type 1, checking Open5GS SQN representation before using the programmer's reference value. Then deploy CU + DU1 + DU2, verify each UE's intended cell and registration, establish separate PDU/WWAN/IP paths, and test MPTCP. Extend the already verified DU1 FlexRIC telemetry to per-DU/per-UE monitoring after dual-link reception works.
+
 ## Platform and Software Versions
 
 | Component | Recorded configuration |
@@ -150,6 +168,7 @@ README.md
 docs/
 ├── project_progress_and_configuration.md
 ├── software_installation_and_drivers.md
+├── sim_provisioning_and_dual_ue.md
 ├── full_reproduction_runbook.md
 ├── spark_quick_commands.md
 ├── ue_laptop_quick_commands.md
@@ -164,6 +183,7 @@ docs/
 |---|---|
 | [Project Progress and System Configuration](docs/project_progress_and_configuration.md) | Verified architecture, phase status, configuration values and remaining work |
 | [Software Installation, Drivers, and OCUDU Environment](docs/software_installation_and_drivers.md) | Software dependencies, drivers, compiler/build environment and installation issues |
+| [SIM Provisioning and Dual-UE Preparation](docs/sim_provisioning_and_dual_ue.md) | Open Cells card programming, protected credentials, Quectel checks, and remaining dual-subscriber/dual-DU validation |
 | [Full Reproduction Runbook](docs/full_reproduction_runbook.md) | Startup, laptop setup, registration, IPv4 data, traffic and shutdown commands |
 | [Spark quick commands](docs/spark_quick_commands.md) | Command booklet for core, CU, FlexRIC, DU, xApp, traffic and shutdown with compact checks |
 | [UE laptop quick commands](docs/ue_laptop_quick_commands.md) | Command booklet for modem selection, SA registration, IPv4 bearer, WWAN and traffic |
@@ -176,7 +196,7 @@ New members should read the project overview and configuration first, prepare mi
 
 ## Quick Start
 
-Follow the [Full Reproduction Runbook](docs/full_reproduction_runbook.md) one stage at a time:
+The following reproduces the existing single-link subscriber `001010000000001`. For the new `...101` / `...102` cards, complete the matching subscriber records and dual-UE preparation in the [SIM guide](docs/sim_provisioning_and_dual_ue.md) first. Follow the [Full Reproduction Runbook](docs/full_reproduction_runbook.md) one stage at a time:
 
 1. Check B210/USB 3 while DU is stopped; apply and verify the recorded OCUDU performance settings.
 2. Start/check MongoDB, verify the exact subscriber is IPv4-only, and align NRF/AMF PLMN.
@@ -193,6 +213,7 @@ The current Falcomm over-the-air chain uses **UHD and a USRP B210**. ZeroMQ sett
 ## Scope and Limitations
 
 - The verified configuration covers one DU, one B210 and one RM500Q with an initial IPv4 TCP uplink result. Cold-start/new-laptop reproduction, longer uplink, downlink, UDP loss/jitter and video are still validation tasks.
+- Two new SIMs and modem UICC checks are complete; new-subscriber registration, DU2 deployment, two simultaneous WWAN/IP paths and MPTCP remain pending.
 - FlexRIC E2 Setup, actual UE KPM values, the repaired report-age display and subscription/deletion are verified. Correlation with synchronized application traffic, precise timing accuracy and sustained stability remain validation tasks.
 - The 30.72 MS/s, 20-s UHD benchmark is a radio/USB stress test. The current OCUDU configuration uses a 23.04 MS/s sample rate.
 - The NVIDIA kernel, PREEMPT_RT status, and system-default GCC configuration are retained to preserve the reproducible baseline.

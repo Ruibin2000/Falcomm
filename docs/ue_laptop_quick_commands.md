@@ -1,8 +1,21 @@
 # UE Laptop Quick Commands
 
-Updated: 2026-10-07. Run these steps in order in **one Bash terminal on the UE laptop** and keep the variables defined below. Continue only after each step succeeds. For full instructions, see [Runbook stages 10–14](full_reproduction_runbook.md#10-prepare-a-new-ubuntulinux-laptop); start Spark using [Spark Quick Commands](spark_quick_commands.md).
+Updated: 2026-10-07. Run these steps in order in **one Bash terminal per UE on the laptop** and keep that UE's variables in its terminal. Continue only after each step succeeds. For full instructions, see [Runbook stages 10–14](full_reproduction_runbook.md#10-prepare-a-new-ubuntulinux-laptop); start Spark using [Spark Quick Commands](spark_quick_commands.md).
 
 The 2026-10-05 session verified single-UE registration, IPv4 connectivity, and an initial 10-second TCP uplink. The 2026-10-07 session verified five DU KPM measurements from a real UE. After the timestamp repair, the latest run received 12 reports for UE ID `7`, with `report_age_us` of **591–796 µs**, and the xApp exited normally. The ping and 30-second uplink/downlink commands below are further acceptance checks, not results demonstrated in this session.
+
+## 0 Select the SIM and subscriber plan
+
+Open Cells SIM provisioning, Milenage authentication, and Quectel USIM-readiness checks are complete for both cards. The new IMSIs have **not yet registered against the RAN/Open5GS**. The earlier single-link baseline used IMSI `001010000000001`; its traffic/KPM evidence does not establish registration of the new cards.
+
+| Intended UE / DU | Card | IMSI | Observed modem IMEI |
+| --- | --- | --- | --- |
+| UE1 / DU1 | OC011830 | `001010000000101` | `863305041978437` |
+| UE2 / DU2 | OC011831 | `001010000000102` | `863305041980706` |
+
+Before connecting either new UE, prepare its matching Open5GS subscriber using the protected `~/sim_du1_credentials.txt` or `~/sim_du2_credentials.txt`, SST 1, DNN `internet`, and IPv4 session type 1. K/OPc must remain private. The utility recommended SQN reference `96` after its authentication test; verify the installed core's representation and current SQN before using it. See [SIM assignments](sim_provisioning_and_dual_ue.md#sim-assignments), [subscriber preparation](sim_provisioning_and_dual_ue.md#prepare-open5gs-subscribers), and [dual-path validation](sim_provisioning_and_dual_ue.md#validate-two-ue-paths).
+
+Do not select a second modem in a terminal retaining the first UE's bearer/WWAN variables. Separate terminals protect variables, but share the laptop's routing tables. The single-link route recipe below does **not** implement two simultaneous IP paths or MPTCP.
 
 ## 1 Install tools and select the modem
 
@@ -16,7 +29,7 @@ sudo systemctl enable --now ModemManager
 
 Connect the RM500Q-GL, test USIM, antennas, data USB, and auxiliary power to the RMU500EK. Verified firmware: `RM500QGLABR13A03M4G`. If ports are missing, see [Driver checks](software_installation_and_drivers.md#72-kernel-driver-responsibilities).
 
-Define these value-extraction and modem-selection functions once. If several RM500Q modems are present, select the intended device explicitly:
+Define these functions once in each UE terminal. The following identity-selection wrapper is a reproduction procedure; the reported session tested the underlying `mmcli` commands. Select by the intended IMEI or device identifier, not the first modem path:
 
 ```bash
 mm_value() {
@@ -27,24 +40,43 @@ mm_value() {
 }
 
 select_rm500q() {
+  local listing path details model identity imei
+  local -a candidates=() matched=()
+  if [ -n "${BEARER:-}" ] || [ -n "${WWAN_IF:-}" ]; then
+    printf 'This terminal retains a UE bearer/WWAN; finish cleanup and use a fresh UE terminal.\n'
+    return 1
+  fi
   MODEM=""
-  local listing model
-  local -a candidates
   listing=$(mmcli -L) || return 1
   mapfile -t candidates < <(printf '%s\n' "$listing" |
     awk '/RM500Q/ { print }' | grep -oE '/org/freedesktop/ModemManager1/Modem/[0-9]+')
-  case ${#candidates[@]} in
-    0) printf 'No RM500Q found; check USB and drivers before retrying.\n'; return 1 ;;
-    1) MODEM=${candidates[0]} ;;
-    *) printf '%s\n' "$listing"; read -r -p 'Enter the full Modem path of the intended RM500Q: ' MODEM ;;
-  esac
-  MODEM_KV=$(mmcli -m "$MODEM" -K) || { MODEM=""; return 1; }
-  model=$(printf '%s\n' "$MODEM_KV" | mm_value modem.generic.model)
-  MODEM_IDENTITY=$(printf '%s\n' "$MODEM_KV" | mm_value modem.generic.device-identifier)
-  if [[ "$model" != *RM500Q* ]] || [[ -z "$MODEM_IDENTITY" || "$MODEM_IDENTITY" = -- ]]; then
-    MODEM=""; printf 'Model or device identifier does not match; stop here.\n'; return 1
+  if [ ${#candidates[@]} -eq 0 ]; then
+    printf 'No RM500Q found; check USB and drivers before retrying.\n'; return 1
   fi
-  printf 'modem=%s model=%s firmware=%s\n' "$MODEM" "$model" \
+  read -r -p 'Expected RM500Q IMEI or device identifier: ' EXPECTED_MODEM_ID
+  [ -n "$EXPECTED_MODEM_ID" ] || return 1
+  for path in "${candidates[@]}"; do
+    details=$(mmcli -m "$path" -K) || return 1
+    model=$(printf '%s\n' "$details" | mm_value modem.generic.model)
+    identity=$(printf '%s\n' "$details" | mm_value modem.generic.device-identifier)
+    imei=$(printf '%s\n' "$details" | mm_value modem.generic.equipment-identifier)
+    printf 'candidate=%s imei=%s identity=%s\n' "$path" "$imei" "$identity"
+    if [[ "$model" = *RM500Q* && -n "$identity" && "$identity" != -- ]] &&
+       [[ "$EXPECTED_MODEM_ID" = "$imei" || "$EXPECTED_MODEM_ID" = "$identity" ]]; then
+      matched+=("$path")
+    fi
+  done
+  if [ ${#matched[@]} -ne 1 ]; then
+    printf 'Expected identity matched %s modems; stop and inspect.\n' "${#matched[@]}"; return 1
+  fi
+  MODEM=${matched[0]}
+  MODEM_KV=$(mmcli -m "$MODEM" -K) || { MODEM=""; return 1; }
+  MODEM_IDENTITY=$(printf '%s\n' "$MODEM_KV" | mm_value modem.generic.device-identifier)
+  imei=$(printf '%s\n' "$MODEM_KV" | mm_value modem.generic.equipment-identifier)
+  if [[ "$EXPECTED_MODEM_ID" != "$imei" && "$EXPECTED_MODEM_ID" != "$MODEM_IDENTITY" ]]; then
+    MODEM=""; printf 'Device identity changed; stop here.\n'; return 1
+  fi
+  printf 'modem=%s imei=%s firmware=%s\n' "$MODEM" "$imei" \
     "$(printf '%s\n' "$MODEM_KV" | mm_value modem.generic.revision)"
 }
 select_rm500q
@@ -52,9 +84,45 @@ select_rm500q
 
 If the modem is disabled, run `sudo mmcli -m "$MODEM" --enable`. Rediscover modem, SIM, and bearer IDs instead of reusing historical numbers.
 
+### 1a Read the inserted SIM and USIM state
+
+Use the selected modem's actual SIM path and `(qmi)` port. This wrapper is a read-only reproduction procedure, not an additional test result:
+
+```bash
+MODEM_KV=$(mmcli -m "$MODEM" -K)
+SIM_PATH=$(printf '%s\n' "$MODEM_KV" | mm_value modem.generic.sim)
+if [[ "$SIM_PATH" =~ ^/org/freedesktop/ModemManager1/SIM/[0-9]+$ ]] && \
+   SIM_KV=$(mmcli -i "$SIM_PATH" -K); then
+  printf 'SIM active=%s IMSI=%s ICCID=%s operator=%s name=%s\n' \
+    "$(printf '%s\n' "$SIM_KV" | mm_value sim.properties.active)" \
+    "$(printf '%s\n' "$SIM_KV" | mm_value sim.properties.imsi)" \
+    "$(printf '%s\n' "$SIM_KV" | mm_value sim.properties.iccid)" \
+    "$(printf '%s\n' "$SIM_KV" | mm_value sim.properties.operator-code)" \
+    "$(printf '%s\n' "$SIM_KV" | mm_value sim.properties.operator-name)"
+else
+  printf 'No valid SIM readout for the selected modem; stop here.\n'
+fi
+mapfile -t QMI_PORTS < <(printf '%s\n' "$MODEM_KV" |
+  grep -oE 'cdc-wdm[0-9]+ \(qmi\)' | awk '{print $1}' | sort -u)
+if [ ${#QMI_PORTS[@]} -eq 1 ]; then
+  QMI_PORT=${QMI_PORTS[0]}
+  if QMI_STATUS=$(sudo qmicli -p -d "/dev/$QMI_PORT" --uim-get-card-status); then
+    printf '%s\n' "$QMI_STATUS" | awk '/Card state:|Application type:|Application state:|Personalization state:|PIN1 state:|PIN2 state:/ {print}'
+  else
+    printf 'USIM query failed; stop and inspect.\n'
+  fi
+else
+  printf 'Expected one QMI port on this modem; found %s. Stop and inspect.\n' "${#QMI_PORTS[@]}"
+fi
+```
+
+Match IMSI/ICCID to the intended card before continuing. Require card present, application `usim`, application/personalization ready, and PIN1 disabled. PIN2 `enabled-not-verified` did not prevent the reported checks and does not currently require modification. SIM readiness is not network registration: `searching / detached`, even with signal quality around 88%, is not evidence of private PLMN `00101` attachment. See [Quectel verification](sim_provisioning_and_dual_ue.md#verify-the-cards-through-quectel).
+
+For a SIM swap: finish traffic and bearer cleanup, disable the selected modem with `sudo mmcli -m "$MODEM" --disable`, physically power off/disconnect the RMU, swap the card, and reconnect power. Open a fresh UE terminal and rediscover identity, modem/SIM IDs, and ports. Do not hot-swap or reuse a cached modem number.
+
 ## 2 Configure NR SA and lock the private cell
 
-If the settings are already correct and the modem is registered, continue to stage 3. Otherwise, select an **actual `(at)` port**:
+The lock in this stage is **DU1 only**. DU2's PCI, SSB, radio serial, and addresses are not yet specified; do not reuse this lock as a DU2 template. An IMSI does not select a DU automatically. If the settings are already correct and the modem is registered, continue to stage 3. Otherwise, select an **actual `(at)` port**:
 
 ```bash
 AT_PORT=$(mmcli -m "$MODEM" | grep -oE 'ttyUSB[0-9]+ \(at\)' | head -1 | awk '{print $1}')
@@ -147,7 +215,7 @@ These commands apply only to a dedicated QMI WWAN interface. If a NetworkManager
 
 ```bash
 configure_wwan() {
-  local current_ips mgmt_dev driver
+  local current_ips mgmt_dev driver host_devs
   [[ -n "$BEARER" && "$UE_CONNECTED" = yes && "$UE_SUSPENDED" = no && "$UE_METHOD" = static ]] || return 1
   [[ "$UE_IP" =~ ^10\.45\.([0-9]{1,3})\.([0-9]{1,3})$ ]] || return 1
   (( 10#${BASH_REMATCH[1]} <= 255 && 10#${BASH_REMATCH[2]} <= 255 )) || return 1
@@ -166,6 +234,12 @@ configure_wwan() {
   fi
   current_ips=$(ip -o -4 addr show dev "$WWAN_IF" | awk '{print $4}')
   [[ -z "$current_ips" || "$current_ips" = "$UE_IP/$UE_PREFIX" ]] || return 1
+  host_devs=$(ip -4 route show exact 10.45.0.1/32 |
+    awk '{for(i=1;i<NF;i++) if($i=="dev") print $(i+1)}' | sort -u)
+  if [[ -n "$host_devs" && "$host_devs" != "$WWAN_IF" ]]; then
+    printf 'The private host route belongs to another interface; dual-path routing must be planned first.\n'
+    return 1
+  fi
   sudo ip link set dev "$WWAN_IF" mtu "$UE_MTU" up &&
   sudo ip -4 addr replace "$UE_IP/$UE_PREFIX" dev "$WWAN_IF" noprefixroute &&
   sudo ip -4 route replace 10.45.0.1/32 dev "$WWAN_IF" src "$UE_IP"
@@ -178,7 +252,7 @@ else
 fi
 ```
 
-The route to `10.45.0.1` must use `$WWAN_IF` and `$UE_IP`, with the Wi-Fi default route retained. This adds only a private host route; it does not add a default route, NAT, or MASQUERADE.
+This guarded route-ownership check is a reproduction procedure. It refuses to replace another interface's active private path. The route to `10.45.0.1` must use `$WWAN_IF` and `$UE_IP`, with the Wi-Fi default route retained. This adds only a private host route; it does not add a default route, NAT, or MASQUERADE.
 
 ## 5 Check ping, traffic, and KPM
 

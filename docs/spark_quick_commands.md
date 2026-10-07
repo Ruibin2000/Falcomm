@@ -8,6 +8,14 @@ Versions: OCUDU `050a2bb`; FlexRIC `73650812`, build directory `build-ocudu`, GC
 
 Run checks in a diagnostics terminal. CU, FlexRIC, DU, and iperf each need their own foreground terminal. Use the same xApp Bash terminal for steps 6 and 7; shell variables are not shared between terminals.
 
+## 0 Check the SIM and subscriber plan
+
+The new Open Cells cards OC011830 / IMSI `001010000000101` and OC011831 / IMSI `001010000000102` are provisioned, Milenage-authenticated, and verified as ready in Quectel modems. They have **not yet registered against the RAN/Open5GS**. The earlier baseline IMSI `001010000000001` and its single-DU/KPM results remain separate.
+
+Before using either new card, prepare its own matching core subscriber from protected `~/sim_du1_credentials.txt` or `~/sim_du2_credentials.txt`, SST 1, `internet`, and IPv4 type 1. Keep K/OPc private. The programming tool's recommended SQN reference `96` requires verification of the installed core's representation/current state; do not blindly insert or reset decimal 96. See [SIM assignments](sim_provisioning_and_dual_ue.md#sim-assignments) and [Open5GS preparation](sim_provisioning_and_dual_ue.md#prepare-open5gs-subscribers).
+
+These launch commands cover **DU1 only**. DU2's configuration, radio serial, PCI/SSB, and distinct DU/network identifiers and addresses are not supplied. IMSI does not automatically bind a UE to a DU; the DU1 lock cannot serve as a DU2 template. Two registered WWAN/IP paths and MPTCP remain pending; see [dual-UE validation](sim_provisioning_and_dual_ue.md#validate-two-ue-paths).
+
 ## 1 Check before startup
 
 Run in the Spark diagnostics terminal. **Run UHD checks only while DU is stopped.** If an earlier DU/CU experiment is still running, follow the shutdown steps first.
@@ -52,7 +60,7 @@ sysctl -n net.core.rmem_max net.core.wmem_max net.core.rmem_default net.core.wme
 
 ## 3 Start MongoDB and the core
 
-Preserve the existing `open5gs-mongo` container and data volume. The subscriber should have SST 1, session `internet`, and type 1; see the [subscriber check](full_reproduction_runbook.md#5-start-mongodb-and-verify-the-subscriber).
+Preserve the existing `open5gs-mongo` container and data volume. The baseline subscriber `001010000000001` should have SST 1, session `internet`, and type 1; see the [subscriber check](full_reproduction_runbook.md#5-start-mongodb-and-verify-the-subscriber). When using the new cards, run the separate nonsecret [two-subscriber preflight](full_reproduction_runbook.md#5a-prepare-the-two-provisioned-open-cells-subscribers) after MongoDB is ready. That check is a reproduction procedure and cannot prove K/OPc or SQN correctness.
 
 ```bash
 sudo docker start open5gs-mongo >/dev/null &&
@@ -122,7 +130,7 @@ stdbuf -oL -eL /usr/local/bin/flexric/ric/nearRT-RIC -c /usr/local/etc/flexric/r
 
 ## 5 Start DU with E2 enabled
 
-The existing `configs/du1_flexric.yml` enables E2/KPM and metrics. If it is missing, create it using the [full runbook](full_reproduction_runbook.md) first. Run in the **DU terminal**; this starts B210 RF transmission:
+The existing `configs/du1_flexric.yml` enables DU1 E2/KPM and metrics. If it is missing, create it using the [full runbook](full_reproduction_runbook.md) first. Run in the **DU terminal**; this starts B210 RF transmission:
 
 ```bash
 cd /home/nyu/ocudu
@@ -131,7 +139,7 @@ sudo build/apps/du_split_8/odu \
   -c configs/du1_flexric.yml
 ```
 
-Confirm F1-C / E2AP `completed` and `==== DU started ===`. FlexRIC should receive this DU's `E2 SETUP-REQUEST` and accept KPM ID `2`. In the diagnostics terminal, check the summary of the three SCTP connections:
+Confirm F1-C / E2AP `completed` and `==== DU started ===` for this DU1 baseline. A future second DU requires its own reviewed configuration and per-DU evidence; the summary below proves only the current single-DU connections. FlexRIC should receive this DU's `E2 SETUP-REQUEST` and accept KPM ID `2`. In the diagnostics terminal, check the summary of the three SCTP connections:
 
 ```bash
 sudo ss -H -an -A sctp | awk '
