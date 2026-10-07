@@ -1,6 +1,6 @@
 # Software Installation, Drivers, and OCUDU Environment
 
-Updated: 2026-10-05. This document records the software dependencies, device drivers, build environment, and installation issues for the DGX Spark and UE laptop. It combines earlier installation records with inspection of installed packages, the OCUDU CMake cache, and the UHD udev rules. Commands describe installation or environment inspection; they were not used to reinstall the working system during this update.
+Updated: 2026-10-07. This document records software dependencies, device drivers and builds for DGX Spark and the UE laptop. The OCUDU/Open5GS baseline comes from the 2026-10-05 deployment; section 8 records the FlexRIC build and installation completed on 2026-10-07.
 
 For experiment startup, modem registration, PDU sessions, traffic, and shutdown, use the [Full Reproduction Runbook](full_reproduction_runbook.md). Executable CU/DU and core configuration values are recorded in [Project Progress](project_progress_and_configuration.md#configuration-records); registration and data-session failures are in the [2026-10-05 debug record](troubleshooting/2026-10-05_sa_bringup.md).
 
@@ -14,6 +14,7 @@ For experiment startup, modem registration, PDU sessions, traffic, and shutdown,
 | OCUDU compiler | Clang/Clang++ 18.1.3, C++17 |
 | Build system | CMake 3.28.3, Make; Release build |
 | OCUDU | `release_26_04`, commit `050a2bb`, checkout `/home/nyu/ocudu` |
+| FlexRIC | `br-flexric`, pinned `73650812`, checkout `/home/nyu/flexric`, GCC 13.3 Debug build in `build-ocudu` |
 | Radio software | Ubuntu UHD 4.6.0.0, `libuhd-dev` and `uhd-host` |
 | Core software | Open5GS arm64 packages `2.8.0~noble5` |
 | Database | MongoDB 7, Docker image `mongo:7.0-jammy`, arm64 |
@@ -21,7 +22,7 @@ For experiment startup, modem registration, PDU sessions, traffic, and shutdown,
 | Modem tools inspected on Spark | ModemManager 1.23.4, libqmi-utils 1.35.2, minicom 2.9 |
 | UE laptop | Ubuntu/Linux with USB serial and QMI kernel drivers; its kernel/version must be checked independently |
 
-Retain the NVIDIA kernel and system compiler defaults. Select Clang for OCUDU through CMake, rather than changing compiler alternatives. Future FlexRIC/xApp builds were planned with GCC; Python/CUDA work remains a separate AI development stage. Installing a generic kernel, PREEMPT_RT, CUDA toolkit, or NVIDIA driver replacement is not part of the recorded OCUDU installation.
+Retain the NVIDIA kernel and system compiler defaults. Select Clang for OCUDU through CMake, rather than changing compiler alternatives. FlexRIC/C xApp use GCC selected per build; Python/CUDA remains a separate future AI stage. Installing a generic kernel, PREEMPT_RT, CUDA toolkit, or NVIDIA driver replacement is not part of this deployment.
 
 `[SPARK]` Record the host and toolchain before installation:
 
@@ -364,7 +365,76 @@ The tested firmware is `RM500QGLABR13A03M4G`. Older `AT+QCFG="nwscanmode"` / `AT
 
 Repeated USB disconnects require inspection of cables, power, enumeration and modem state. The record did not isolate a universal cause or establish a required autosuspend change. After a modem reboot, rediscover IDs and ports. QMI queries alongside ModemManager use proxy mode (`qmicli -p`), and concurrent programs must not hold the same AT port.
 
-## 8. Installation and environment issue log
+## 8 FlexRIC installation on Spark
+
+FlexRIC is a separate Near-RT RIC project connected to OCUDU over E2. The tested revision is **`736508123fe4b5dc3db83fb5baf5f0a8e9b04fe8`** on `br-flexric`. Its standard KPM ASN.1 codec supports the tested Format 4 subscription and OCUDU Format 3 report encoding. The earlier pinned `1a3903a7` failed live subscription with OCUDU `050a2bb`; do not use that revision for this procedure. The [dated record](troubleshooting/2026-10-07_flexric_bringup.md) distinguishes offline codec tests from the successful live subscription.
+
+### 8a Dependencies
+
+`[SPARK]`
+
+```bash
+sudo apt update
+sudo apt install -y build-essential cmake libsctp-dev pkg-config \
+  cmake-curses-gui libconfig-dev libconfig++-dev
+```
+
+On 2026-10-07, the missing packages installed were `cmake-curses-gui` 3.28.3 and the two libconfig development packages 1.5. GCC 13.3, CMake 3.28.3, SCTP, SWIG 4.2 and Python 3.12 development files were already present. The C-only build below disables multilanguage support, so no Python xApp or database service is needed.
+
+### 8b Source and build
+
+For a new checkout only:
+
+```bash
+cd /home/nyu
+git clone --branch br-flexric https://gitlab.eurecom.fr/mosaic5g/flexric.git
+```
+
+For the existing checkout, retain local changes and use its fetched history. Configure a separate build directory:
+
+```bash
+cd /home/nyu/flexric
+git switch --detach 736508123fe4b5dc3db83fb5baf5f0a8e9b04fe8
+git log -1 --format='%h %s'
+
+cmake -S . -B build-ocudu \
+  -DCMAKE_C_COMPILER=gcc \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DE2AP_VERSION=E2AP_V3 \
+  -DKPM_VERSION=KPM_V3_00 \
+  -DXAPP_DB=NONE_XAPP \
+  -DXAPP_MULTILANGUAGE=OFF
+
+cmake --build build-ocudu -j 8
+sudo cmake --install build-ocudu
+```
+
+Stop any running RIC/xApp before replacing their installed binaries/libraries. The correct KPM option for this revision is `KPM_V3_00`; the old revision used `KPM_V3`. Leave the old `build` directory out of these commands. Configuration should report E2AP v3, KPM v3.00, `NONE_XAPP` and multilanguage OFF. The reported build completed despite executable-stack linker warnings.
+
+### 8c Installed files and artifact confirmation
+
+The install prefix is `/usr/local`, with `CMAKE_INSTALL_LIBDIR=lib`:
+
+| Artifact | Installed path |
+|---|---|
+| RIC | `/usr/local/bin/flexric/ric/nearRT-RIC` |
+| C xApp | `/usr/local/bin/flexric/xApp/c/xapp_oran_moni` |
+| KPM codec | `/usr/local/lib/flexric/libkpm_sm.so` |
+| RIC config | `/usr/local/etc/flexric/ric.conf` |
+| xApp config | `/usr/local/etc/flexric/xapp_oran_sm.conf` |
+
+Both configs use `SM_DIR = "/usr/local/lib/flexric/"`. RIC listens on localhost SCTP E2 `36421` and E42 `36422`. Confirm the installed codec matches this build:
+
+```bash
+cd /home/nyu/flexric
+sha256sum \
+  build-ocudu/src/sm/kpm_sm/kpm_sm_v03.00/libkpm_sm.so \
+  /usr/local/lib/flexric/libkpm_sm.so
+```
+
+Require identical hashes for the pair, not a fixed hash across builds. The runtime DU overlay and startup sequence are in [runbook stage 9](full_reproduction_runbook.md#9-confirm-rf-and-start-the-du).
+
+## 9 Installation and environment issue log
 
 | Issue or observation | Evidence/status | Recorded resolution or next diagnostic |
 |---|---|---|
@@ -377,10 +447,12 @@ Repeated USB disconnects require inspection of cables, power, enumeration and mo
 | RM500Q ports renamed after reconnect/reboot | Port numbers and modem IDs changed | Rediscover ports and their roles rather than reuse historical paths |
 | Older Quectel preference commands returned ERROR | Tested firmware accepted QNWPREFCFG instead | Use the recorded firmware-compatible commands in the runbook |
 | RAN scheduling warnings / recurring RF errors | Runtime privilege/performance issue after successful installation | Recorded performance script and privileged launch; sustained stability remains open |
+| KPM Format 4 decode failure and RIC assertion | Old `1a3903a7` compiled a modified KPM ASN.1 codec | Install `73650812` from `build-ocudu` with `KPM_V3_00`; live subscription/deletion then passed |
+| xApp exits after about 10 seconds | Expected behavior of the `73650812` C monitor example | Look for successful subscription, deletion response and `Test xApp run SUCCESSFULLY` |
 
 A successful build or driver probe does not establish SA registration or a usable PDU session. The 2026-10-05 NRF PLMN, subscriber, IPv4v6 and WWAN issues are documented separately in the dated debug record.
 
-## 9. Installation completion record
+## 10 Installation completion record
 
 - [ ] Spark OS, kernel, architecture and compiler versions recorded.
 - [ ] UHD packages and matching images present; stopped-radio probe detects B210 over USB 3.
@@ -388,5 +460,6 @@ A successful build or driver probe does not establish SA registration or a usabl
 - [ ] Docker available; existing MongoDB 7 container/volume retained or created on a new host.
 - [ ] Open5GS package version, service files and persistent TUN configuration inspected.
 - [ ] UE laptop detects the modem's AT, QMI and network interfaces with the expected drivers.
+- [ ] FlexRIC revision/options recorded; installed KPM library matches `build-ocudu` and configs reference the installed service directory.
 
-Continue with the [Full Reproduction Runbook](full_reproduction_runbook.md) after these prerequisites are satisfied. Future FlexRIC, AI/CUDA development, and MPTCP application tooling need their own installation records when implemented.
+Continue with the [Full Reproduction Runbook](full_reproduction_runbook.md) or the [Spark](spark_quick_commands.md) and [UE laptop](ue_laptop_quick_commands.md) quick commands. Actual UE KPM reception, AI/CUDA development and MPTCP application tooling remain future validation/development work.

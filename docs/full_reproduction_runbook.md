@@ -1,16 +1,16 @@
 # Full Reproduction Runbook: Single-Link 5G SA
 
-Last updated: 2026-10-05. Evidence: the operator's successful 2026-10-05 session and the inspected local OCUDU/Open5GS configuration. This manual starts an already installed Spark testbed and configures a new Ubuntu laptop. Software installation, drivers and the OCUDU build environment are documented in [Installation](software_installation_and_drivers.md).
+Last updated: 2026-10-07. The 2026-10-05 session verified initial UE traffic; the 2026-10-07 session verified FlexRIC E2 Setup and KPM subscription/deletion. Actual UE KPM reception is the next validation step. This manual starts an installed Spark testbed and configures a new Ubuntu laptop. Software installation and builds are in [Installation](software_installation_and_drivers.md); daily commands with compact confirmations are in the [Spark](spark_quick_commands.md) and [UE laptop](ue_laptop_quick_commands.md) booklets.
 
-**Startup:** physical connections → USB 3 verification → host performance → clean SA service selection → MongoDB → subscriber/IPv4/NRF checks → required 5GC → `ogstun` → CU → DU → laptop setup → NR/SA cell lock → registration → IPv4 PDU session → active bearer → WWAN configuration → ping → application traffic.
+**Startup:** physical connections → USB 3 verification → host performance → clean SA service selection → MongoDB → subscriber/IPv4/NRF checks → required 5GC → `ogstun` → CU → FlexRIC → DU with E2 overlay → xApp subscription check → laptop setup → NR/SA cell lock → registration → IPv4 PDU session → active bearer → WWAN configuration → ping → traffic with KPM reception check.
 
-**Shutdown:** applications → PDU session → manual laptop addresses/routes → optional modem disable → DU → CU → required 5GC → optional/legacy services for a full shutdown → optional WebUI/MongoDB stop.
+**Shutdown:** traffic and xApp subscription → PDU session → manual laptop addresses/routes → optional modem disable → DU → FlexRIC → CU → required 5GC → optional/legacy services for a full shutdown → optional WebUI/MongoDB stop.
 
 Execute one numbered stage at a time. Check the stated evidence before advancing. Labels identify the execution host: `[SPARK]`, `[LAPTOP]`, or `[RM500Q AT]`. CU/DU and application commands remain in foreground terminals. Keep the laptop's management Wi-Fi default route. Public Internet, NAT, and MASQUERADE are not needed for laptop-to-Spark traffic.
 
 ## 1. Baseline and physical connections
 
-The verified radio baseline is n78, carrier ARFCN 650000 (3750 MHz), SSB ARFCN 649632 (3744.48 MHz), 20 MHz, 30 kHz SCS, PCI 1, PLMN `00101`, TAC 7, SST 1, DNN `internet`, and IPv4 only. B210 serial is `3271233`; TX gain is **80**, RX gain **40**, and sample rate **23.04 MS/s**. These gain settings are not calibrated dBm or EIRP. This baseline supersedes the early gain 10/20 trials.
+The verified radio baseline is n78, carrier ARFCN 650000 (3750 MHz), SSB ARFCN 649632 (3744.48 MHz), 20 MHz, 30 kHz SCS, PCI 1, PLMN `00101`, TAC 7, SST 1, DNN `internet`, and IPv4 only. B210 serial is `3271233`; the 2026-10-05 traffic baseline used **TX 80 / RX 40**, with sample rate **23.04 MS/s**. The actual base file inspected on 2026-10-07 has **TX 70 / RX 40**. Record the file's current gain before each run and preserve it; the E2 overlay changes no RF settings. Gain is not calibrated dBm or EIRP.
 
 `[SPARK]` Connect B210 through USB 3; do not place the working DU on a 480M USB 2 path. Attach the verified RF antenna path before enabling transmission. Use the authorized laboratory frequency and power conditions. B210 frequency conversion for FR3 is future work.
 
@@ -222,16 +222,69 @@ Require the current AMF `gNB-N2 accepted` / added-gNB entry and an established N
 
 ## 9. Confirm RF and start the DU
 
-Confirm n78, ARFCN 650000, 3750 MHz, 20 MHz, 30 kHz, PLMN `00101`, TAC 7, PCI 1, B210 `3271233`, TX gain 80 and RX gain 40 against stage 6. The following command enables RF transmission. Do not silently change the baseline gain or frequency.
+Confirm n78, ARFCN 650000, 3750 MHz, 20 MHz, 30 kHz, PLMN `00101`, TAC 7, PCI 1, B210 `3271233`, and actual TX/RX gain against stage 6. The 2026-10-07 file has TX 70 / RX 40; TX 80 belongs to the earlier traffic record. The DU command below enables RF transmission.
+
+### 9a Prepare the DU E2 overlay
+
+Create this file once if it is absent. For an existing file, compare it with the [current overlay record](project_progress_and_configuration.md#du1-e2-and-kpm-configuration) before changing it.
+
+`[SPARK]`
+
+```bash
+cd /home/nyu/ocudu
+cat > configs/du1_flexric.yml <<'EOF'
+e2:
+  enable_du_e2: true
+  addrs: [127.0.0.1]
+  bind_addrs: [127.0.0.1]
+  port: 36421
+  e2sm_kpm_enabled: true
+
+metrics:
+  layers:
+    enable_sched: true
+    enable_rlc: true
+  periodicity:
+    du_report_period: 1000
+EOF
+
+build/apps/du_split_8/odu \
+  -c configs/du1_b210_n78_20mhz.yml \
+  -c configs/du1_flexric.yml --dryrun
+echo "dryrun_exit=$?"
+```
+
+Require `dryrun_exit=0`. This version's dry run checks configuration parsing and exits before radio startup; it does not validate F1/E2 connectivity. Embedded E2 is already present in OCUDU `050a2bb`; no `ENABLE_EXPORT` or ZeroMQ rebuild is required.
+
+### 9b Start FlexRIC and the DU
+
+Use installed FlexRIC `73650812`, built with `E2AP_V3` / `KPM_V3_00`; see [installation](software_installation_and_drivers.md#8-flexric-installation-on-spark). CU must already be running. In a separate RIC terminal:
+
+`[SPARK]`
+
+```bash
+/usr/local/bin/flexric/ric/nearRT-RIC \
+  -c /usr/local/etc/flexric/ric.conf
+```
+
+Keep it running. Check its two SCTP listeners once:
+
+```bash
+ss -lnp -A sctp | grep -E ':36421|:36422'
+```
+
+Require `127.0.0.1:36421` for E2 and `127.0.0.1:36422` for xApp E42. Start DU only after CU and RIC are available: its E2 Setup requires F1 component information, and restarting RIC requires restarting DU for a new association.
 
 `[SPARK]` In the DU terminal:
 
 ```bash
 cd /home/nyu/ocudu
-sudo build/apps/du_split_8/odu -c configs/du1_b210_n78_20mhz.yml
+sudo build/apps/du_split_8/odu \
+  -c configs/du1_b210_n78_20mhz.yml \
+  -c configs/du1_flexric.yml
 ```
 
-Expect B210 / USB 3 initialization, 23.04 MHz master clock, cell PCI 1 / 20 MHz / n78 / carrier ARFCN 650000 / SSB ARFCN 649632, F1-C connection completed, and `==== DU started ===`. Check the running DU without opening the B210 from another tool:
+Expect B210 / USB 3 initialization, 23.04 MHz master clock, cell PCI 1 / 20 MHz / n78 / carrier ARFCN 650000 / SSB ARFCN 649632, F1-C and E2 connections completed, and `==== DU started ===`. RIC should accept `ngran_gNB_DU`, DU ID 1, node ID 411 and RAN function ID 2 (`ORAN-E2SM-KPM`). Check the running DU without opening the B210 from another tool:
 
 `[SPARK]` In a separate diagnostics terminal:
 
@@ -245,7 +298,7 @@ sudo grep -Eic 'late' /tmp/du.log
 sudo grep -Eic 'overflow' /tmp/du.log
 ```
 
-Both N2 and F1-C must be `ESTAB`. GTP-U listeners include DU `127.0.10.2`, CU F1-U `127.0.10.1`, CU N3 `127.0.0.1`, UPF `127.0.0.7`, all port 2152. Open5GS SMF may also listen on `127.0.0.4:2152`; it is separate from the four data-path endpoints.
+N2, F1-C and E2 to `:36421` must be `ESTAB`. GTP-U listeners include DU `127.0.10.2`, CU F1-U `127.0.10.1`, CU N3 `127.0.0.1`, UPF `127.0.0.7`, all port 2152. Open5GS SMF may also listen on `127.0.0.4:2152`; it is separate from the four data-path endpoints.
 
 Counters of zero make `grep -c` return status 1; this is not itself a failure. Observe whether counters grow during traffic. For an ongoing monitor:
 
@@ -256,6 +309,19 @@ sudo tail -F /tmp/du.log | grep --line-buffered -Ei 'underflow|overflow|late|RF.
 ```
 
 Stop this monitor with `Ctrl+C`. Continuous RF failures require investigation; an isolated late event does not establish a stable long-duration result. The recorded post-tuning check was underflow 0, late 1, not a guaranteed result for every run.
+
+### 9c Verify the KPM subscription
+
+`[SPARK]` After RIC has registered the DU, run in another terminal:
+
+```bash
+/usr/local/bin/flexric/xApp/c/xapp_oran_moni \
+  -c /usr/local/etc/flexric/xapp_oran_sm.conf
+```
+
+Require `Registered E2 Nodes = 1`, `SUBSCRIPTION RESPONSE rx` and `Successfully subscribed to RAN_FUNC_ID 2`. This example collects for about 10 seconds, sends a subscription delete and exits with `Test xApp run SUCCESSFULLY`. The DU block uses KPM Format 4, a 1000 ms period and five DU metrics. Without an eligible UE, subscription can succeed with no measurement indications. Actual UE reception is checked in stage 14a.
+
+If subscription fails, consult the [2026-10-07 record](troubleshooting/2026-10-07_flexric_bringup.md). `log.all_level: info` does not override the separate E2AP logger's warning default; for detailed E2 diagnosis add `log: {e2ap_level: debug}` to the overlay and restart DU after RIC is running. Share only narrow E2/KPM excerpts, not complete RAN logs.
 
 ## 10. Prepare a new Ubuntu/Linux laptop
 
@@ -468,6 +534,12 @@ iperf3 -c 10.45.0.1 -B "$UE_IP" -u -b 2M -t 30
 
 If stable, repeat UDP at 4M, 6M, 8M, and 10M individually. Record direction, duration, sender/receiver rates, retransmissions, UDP jitter/loss, and concurrent DU RF-error counts. Do not infer UDP/video performance from the first TCP test. If routing is correct but traffic fails, check host firewall and service binding before adding forwarding/NAT.
 
+### 14a Validate UE KPM reports during traffic
+
+This is the next acceptance test after the verified subscription-only run. Keep the iperf server, CU, RIC and DU running, and complete stages 12–14 on the laptop. Start a 30-second laptop uplink, then promptly repeat the Spark xApp command from stage 9c while traffic is active. The example's approximately 10-second observation window must overlap the UE traffic.
+
+Require actual `UE ID type = gNB-DU` reports with measurement names and values such as `DRB.UEThpUl` and `RRU.PrbTotUl`. Record the UE ID, direction, traffic rate and report cadence. Subscription success or zero/no-value entries alone do not establish useful throughput telemetry. The example's printed indication-latency value requires an NTP timestamp conversion correction before it can be used as a latency result; see the dated FlexRIC record.
+
 ## 15. Video experiment (procedure; not yet verified)
 
 `[SPARK]` Install FFmpeg if missing and receive in a graphical session:
@@ -507,7 +579,7 @@ The destination/host route and explicit sender `localaddr` keep traffic on the p
 
 ## 16. Shutdown
 
-Stop iperf, ffmpeg, ffplay, and any receiver with `Ctrl+C` before releasing the bearer.
+Stop iperf, ffmpeg, ffplay, and any receiver with `Ctrl+C` before releasing the bearer. Let the finite KPM xApp finish and delete its subscription while DU and RIC are available.
 
 `[LAPTOP]` In the shell retaining the discovered variables:
 
@@ -529,7 +601,7 @@ If the host route is already absent, its deletion may return `No such process`; 
 sudo mmcli -m "$MODEM" --disable
 ```
 
-Disconnect the bearer before physically unplugging the RMU. Next, in the DU terminal press `Ctrl+C` and require `Stopping...`; RF transmission ends. Then press `Ctrl+C` in the CU terminal. For orphaned sessions use the inspected-name `pkill -INT -x` method in stage 2. Avoid SIGKILL as routine cleanup.
+Disconnect the bearer before physically unplugging the RMU. Next, press `Ctrl+C` in the DU terminal and require `Stopping...`; RF transmission ends. Then stop FlexRIC with `Ctrl+C`, followed by CU. Stop DU before RIC so the E2 connection is still available during DU teardown. For orphaned RAN sessions use the inspected-name `pkill -INT -x` method in stage 2. Avoid SIGKILL as routine cleanup.
 
 `[SPARK]` Stop the core sequentially:
 
@@ -567,21 +639,25 @@ Never remove containers/volumes during normal shutdown. Verify:
 pgrep -a -x odu || true
 pgrep -a -x ocu || true
 systemctl --no-pager list-units 'open5gs-*' --type=service --state=running
+pgrep -a -x nearRT-RIC || true
+pgrep -a -x xapp_oran_moni || true
 sudo ss -lunp | grep 2152 || true
 sudo docker ps --filter name=open5gs-mongo
 ```
 
-For a full shutdown, no CU/DU, running Open5GS services, or their GTP-U listeners remain. Docker is separate: MongoDB may run intentionally or be stopped; the persistent container/volume must remain.
+For a full shutdown, no CU/DU/RIC/xApp, running Open5GS services, or their GTP-U listeners remain. Docker is separate: MongoDB may run intentionally or be stopped; the persistent container/volume must remain.
 
 ## 17. Acceptance and next session
 
 - [ ] B210 `3271233` at USB 3; performance settings checked.
 - [ ] All ten required core functions active; NRF PLMN correct; subscriber type 1.
 - [ ] CU N2 and DU F1-C established; expected four GTP-U endpoints present.
+- [ ] FlexRIC registers DU1 and KPM function ID 2; xApp subscribes/deletes successfully.
 - [ ] RM500Q detects the private SSB and reports NR5G-SA / PLMN `00101` / C5GREG registered.
 - [ ] Authentication and packet attachment succeed; IPv4 bearer connected.
 - [ ] Actual bearer address/prefix/MTU applied to the laptop modem interface.
 - [ ] Private route confirmed; laptop and Spark reach each other; iperf transfers data.
+- [ ] Actual UE KPM IDs and metric values received during traffic at the configured period.
 - [ ] RF-error growth and test duration recorded; traffic stopped before teardown.
 
-Cold restart on a new laptop, longer TCP tests, downlink, UDP loss/jitter, live video and long-duration RF stability remain to be measured. Freeze a reproducible Single-Link Baseline v1 before adding another path, MPTCP, FlexRIC telemetry, xApps or AI steering.
+FlexRIC E2 Setup and KPM subscription/deletion passed on 2026-10-07. Actual UE KPM reception, cold restart/new-laptop reproduction, longer TCP tests, downlink, UDP loss/jitter, live video and long-duration RF stability remain acceptance work. Freeze Single-Link Baseline v1 before adding another path, MPTCP or active AI steering.

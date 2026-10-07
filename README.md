@@ -1,8 +1,10 @@
 # Falcomm
 
-Falcomm is a 5G/AI-RAN experimental platform based on the NVIDIA DGX Spark. **As of 2026-10-05, one private 5G SA link has carried application traffic between a Linux laptop with a Quectel RM500Q and the Spark through a USRP B210, OCUDU and Open5GS.** The longer-term objective is dual independent radio paths with FlexRIC telemetry, AI channel/rate prediction, and MPTCP video steering.
+Falcomm is a 5G/AI-RAN experimental platform based on the NVIDIA DGX Spark. **One private 5G SA link carried application traffic on 2026-10-05; OCUDU DU1 connected to FlexRIC and completed a KPM xApp subscription on 2026-10-07.** Actual UE KPM reports remain to be validated. The longer-term objective is dual independent radio paths with FlexRIC telemetry, AI channel/rate prediction, and MPTCP video steering.
 
 **Start here: [Full Reproduction Runbook](docs/full_reproduction_runbook.md)** — restart the installed Spark infrastructure, configure the RMU500EK/RM500Q on a new Ubuntu laptop, register, establish IPv4 data, configure WWAN, test local traffic and shut down. [Troubleshooting and the 2026-10-05 debug record](docs/troubleshooting/2026-10-05_sa_bringup.md) explain the repaired failures.
+
+For daily operation, use the Chinese command booklets: **[Spark quick commands](docs/spark_quick_commands.md)** and **[UE laptop quick commands](docs/ue_laptop_quick_commands.md)**. They show compact confirmations; the full runbook retains detailed diagnostics. The [2026-10-07 FlexRIC record](docs/troubleshooting/2026-10-07_flexric_bringup.md) records the codec/version repair and successful subscription.
 
 ## Verified Single-Link Architecture
 
@@ -13,6 +15,8 @@ Linux laptop application ↔ WWAN ↔ RMU500EK / RM500Q-GL
 ```
 
 CU-to-AMF N2 carries access signalling; SMF controls the UPF over N4/PFCP. The tested application endpoints are Spark `10.45.0.1` and the current UE allocation in `10.45.0.0/16`. Management Wi-Fi is separate. The local experiment does not require Internet NAT or changing the laptop's Wi-Fi default route.
+
+The verified control connection is `OCUDU DU1 ↔ E2 ↔ FlexRIC ↔ KPM xApp`. E2 Setup, KPM subscription and subscription deletion passed; a real UE measurement stream has not yet been observed.
 
 ## Target Architecture
 
@@ -61,7 +65,7 @@ flowchart LR
     Up <-->|approximately 7 GHz OTA| Link3
 ```
 
-The future FR1/FR3 diagram uses nominal 3.5 GHz equipment interfaces and an approximately 7 GHz converted OTA path. The verified single-link radio operates at **3.75 GHz**. Pi-Radio frequency conversion, the second path, FlexRIC/xApps and MPTCP steering remain future work. The working RAN is OCUDU with Open5GS; the OAI label in the concept diagram is an alternative implementation, not part of the current deployment.
+The future FR1/FR3 diagram uses nominal 3.5 GHz equipment interfaces and an approximately 7 GHz converted OTA path. The verified single-link radio operates at **3.75 GHz**. Pi-Radio frequency conversion, the second path and MPTCP steering remain future work. FlexRIC and its KPM xApp are installed, with subscription validated on DU1. The working RAN is OCUDU with Open5GS; the OAI label in the concept diagram is an alternative implementation, not part of the current deployment.
 
 ### Network-Side Implementation: OCUDU, Open5GS, and FlexRIC
 
@@ -109,11 +113,15 @@ flowchart LR
 
 In the target system, E2 carries DU/RAN measurements to FlexRIC, and the xApp provides path-steering input to the server application and MPTCP controller. The diagram describes the future two-path implementation. The single-DU chain has now been verified through SA registration, IPv4 PDU setup and initial application traffic, as described below.
 
+DU1's E2 connection and KPM subscription are also verified. DU2, actual UE KPM collection and the path-steering connections in this diagram remain pending.
+
 ## Current Status
 
 The reported **2026-10-05** session verified private SSB detection, PRACH/PUSCH with CRC OK and strong uplink SINR, SA registration/authentication, attached packet service, IPv4 PDU/IP allocation, a connected bearer and manually configured WWAN. The first 10-second TCP uplink test reported **6.29 Mbit/s sender, 5.09 Mbit/s receiver, 0 sender retransmissions**. This is a functional user-plane result; throughput and sustained realtime operation are not yet characterized.
 
 Confirmed repairs were NRF serving PLMN `999/70` → `001/01`, provisioning the missing subscriber, reliable NR/SA private-cell selection, subscriber session type 3 (IPv4v6) → type 1 (IPv4) after OCUDU rejection, host performance tuning, and static WWAN configuration. RX gain 40 was validated by successful uplink access. See [Project Progress](docs/project_progress_and_configuration.md) and the [chronological debug record](docs/troubleshooting/2026-10-05_sa_bringup.md).
+
+On **2026-10-07**, FlexRIC `73650812` registered DU1 and the C xApp reported `Successfully subscribed to RAN_FUNC_ID 2`, then deleted the subscription and exited with `Test xApp run SUCCESSFULLY`. The earlier pinned `1a3903a7` used a modified KPM ASN.1 codec that failed to decode in OCUDU for Format 4. Updating FlexRIC corrected the subscription failure. See the [FlexRIC bring-up record](docs/troubleshooting/2026-10-07_flexric_bringup.md).
 
 ## Platform and Software Versions
 
@@ -122,15 +130,16 @@ Confirmed repairs were NRF serving PLMN `999/70` → `001/01`, provisioning the 
 | Host | NVIDIA DGX Spark, aarch64, Ubuntu 24.04.5 LTS |
 | Kernel | NVIDIA `7.0.0-1019-nvidia`, `PREEMPT_DYNAMIC` |
 | OCUDU | `release_26_04`, commit `050a2bb`, built with Clang 18 |
+| FlexRIC | `br-flexric`, pinned `73650812`; GCC 13.3, Debug, E2AP v3 / KPM v3.00, C xApp, no xApp DB |
 | Open5GS | `2.8.0~noble5` |
 | MongoDB | Docker image `mongo:7.0-jammy` (arm64) |
 | Radio interface | Ettus B210 #1, UHD `4.6.0.0`; ZeroMQ is not used in the current deployment |
-| Verified radio settings | n78, carrier ARFCN 650000 / 3750 MHz, SSB ARFCN 649632, 20 MHz, 30 kHz, TX gain 80 / RX gain 40 |
+| Radio settings | n78, carrier ARFCN 650000 / 3750 MHz, SSB ARFCN 649632, 20 MHz, 30 kHz; 2026-10-05 traffic used TX 80 / RX 40; 2026-10-07 inspected file has TX 70 / RX 40 |
 | UE | RMU500EK / RM500QGL_VH, firmware `RM500QGLABR13A03M4G` |
 | Private session | PLMN `00101`, TAC 7, SST 1, DNN `internet`, IPv4 only |
 | MPTCP | Supported by the NVIDIA kernel; `net.mptcp.enabled = 1` |
 
-Versions and runtime results above are drawn from the deployment records. FlexRIC, the xApp, and the AI control path have not yet been deployed.
+Versions and runtime results above are drawn from the deployment records. FlexRIC and the C KPM xApp are deployed; actual UE telemetry, the AI control path and active steering remain pending.
 
 ## Document Index
 
@@ -140,9 +149,12 @@ docs/
 ├── project_progress_and_configuration.md
 ├── software_installation_and_drivers.md
 ├── full_reproduction_runbook.md
+├── spark_quick_commands.md
+├── ue_laptop_quick_commands.md
 ├── development_handoff.md
 └── troubleshooting/
-    └── 2026-10-05_sa_bringup.md
+    ├── 2026-10-05_sa_bringup.md
+    └── 2026-10-07_flexric_bringup.md
 ```
 
 | Document | Purpose |
@@ -150,10 +162,13 @@ docs/
 | [Project Progress and System Configuration](docs/project_progress_and_configuration.md) | Verified architecture, phase status, configuration values and remaining work |
 | [Software Installation, Drivers, and OCUDU Environment](docs/software_installation_and_drivers.md) | Software dependencies, drivers, compiler/build environment and installation issues |
 | [Full Reproduction Runbook](docs/full_reproduction_runbook.md) | Startup, laptop setup, registration, IPv4 data, traffic and shutdown commands |
+| [Spark quick commands](docs/spark_quick_commands.md) | Chinese command booklet for core, CU, FlexRIC, DU, xApp, traffic and shutdown with compact checks |
+| [UE laptop quick commands](docs/ue_laptop_quick_commands.md) | Chinese command booklet for modem selection, SA registration, IPv4 bearer, WWAN and traffic |
 | [5G SA Bring-up Debug Record, 2026-10-05](docs/troubleshooting/2026-10-05_sa_bringup.md) | Dated evidence, confirmed repairs and troubleshooting decision tree/matrix |
+| [FlexRIC Bring-up Record, 2026-10-07](docs/troubleshooting/2026-10-07_flexric_bringup.md) | Version/codec failure, correction, E2 Setup and KPM subscription evidence |
 | [Development Handoff](docs/development_handoff.md) | Working constraints and next steps for continued development |
 
-New members should read the project overview and configuration first, prepare missing software using the installation guide, then follow the runbook. Consult the dated debug record when a stage fails and the handoff document before extending the system. Keep the runbook as the single operating procedure; future experiment records use `docs/troubleshooting/YYYY-MM-DD_topic.md`.
+New members should read the project overview and configuration first, prepare missing software using the installation guide, then follow the runbook. Consult the dated debug record when a stage fails and the handoff document before extending the system. The quick command booklets summarize the canonical runbook for each host; future experiment records use `docs/troubleshooting/YYYY-MM-DD_topic.md`.
 
 ## Quick Start
 
@@ -162,9 +177,10 @@ Follow the [Full Reproduction Runbook](docs/full_reproduction_runbook.md) one st
 1. Check B210/USB 3 while DU is stopped; apply and verify the recorded OCUDU performance settings.
 2. Start/check MongoDB, verify the exact subscriber is IPv4-only, and align NRF/AMF PLMN.
 3. Start the ten required SA services and verify AMF/PFCP/ogstun.
-4. Launch CU and DU with `sudo` in separate foreground terminals; verify N2, F1 and GTP-U.
+4. Launch CU with `sudo` and FlexRIC in separate foreground terminals, then launch DU with the base and E2 overlay configs; verify N2, F1, GTP-U and E2.
 5. Configure the laptop modem for NR SA/private SSB, establish IPv4 data, and apply the actual active bearer's host settings.
-6. Test local private traffic and record RF-error growth. Shutdown applications and PDU first, then DU, CU and core.
+6. Test local private traffic and record RF-error growth. Run the 10-second KPM xApp during UE traffic to validate actual reports.
+7. Stop traffic/xApp and the laptop PDU first, then DU, FlexRIC, CU and core.
 
 Before operation, verify that local configuration files and device state match the [Full Reproduction Runbook](docs/full_reproduction_runbook.md). The current DU configuration transmits at approximately **3.75 GHz**. Operate only at an authorized frequency, location, and power level. Do not run UHD probes or benchmarks that access the B210 while the DU is using it.
 
@@ -173,6 +189,7 @@ The current Falcomm over-the-air chain uses **UHD and a USRP B210**. ZeroMQ sett
 ## Scope and Limitations
 
 - The verified configuration covers one DU, one B210 and one RM500Q with an initial IPv4 TCP uplink result. Cold-start/new-laptop reproduction, longer uplink, downlink, UDP loss/jitter and video are still validation tasks.
+- FlexRIC E2 Setup and KPM subscription/deletion are verified. Actual UE KPM values and their correlation with traffic remain validation tasks.
 - The 30.72 MS/s, 20-s UHD benchmark is a radio/USB stress test. The current OCUDU configuration uses a 23.04 MS/s sample rate.
 - The NVIDIA kernel, PREEMPT_RT status, and system-default GCC configuration are retained to preserve the reproducible baseline.
 - `ocudu_performance` and privileged RAN launch were applied. Recurring RF failures improved; long-duration stability is still open.
