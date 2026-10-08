@@ -111,7 +111,7 @@ Keep these runtime details in mind:
 - CU and RIC must be available before DU. E2 Setup waits for F1 component data; restarting RIC requires restarting DU for a fresh E2 association.
 - RLC metrics must be enabled for the UE reports used here. Without an eligible UE, subscription can succeed without periodic indications.
 - `log.all_level` does not override the separate E2AP logger default. Set only `log.e2ap_level: debug` when more E2 evidence is needed, then restart DU after RIC.
-- Install the tested timestamp repair before interpreting the new `report_age_us` display. It includes processing and queueing, and is not pure transport latency; see the repair record.
+- Install the tested timestamp repair before interpreting the new `report_age_us` display. It includes processing and queuing, and is not pure transport latency; see the repair record.
 - The current provider accepts the example's S-NSSAI condition without enforcing a slice filter. Do not treat its output as validated per-slice isolation.
 
 Use narrow E2/KPM excerpts when diagnosing failures; keep authentication material and complete RAN INFO logs outside Git. Stop traffic/xApp and the laptop PDU first, then DU, RIC, CU and core; preserve MongoDB data.

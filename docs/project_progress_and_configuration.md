@@ -42,7 +42,7 @@ The tested application path is **laptop ↔ Spark over private 5G**. Management 
 | 3 | Single CU/DU / N2 / F1 / Open5GS | Verified |
 | 4 | RM500Q SA registration, authentication, IPv4 PDU, WWAN, local data | Verified in initial session |
 | 5 | Second DU / second radio / second UE | SIM provisioning and both modem UICC checks complete; matching Open5GS records, DU2/radio deployment and dual-link end-to-end validation pending |
-| 6 | Host realtime work | Performance script and privileged launch applied; sustained stability open |
+| 6 | Host real-time work | Performance script and privileged launch applied; sustained stability open |
 | 7–8 | FlexRIC / KPM xApp | Installed; E2 Setup, actual UE reports, repaired timestamp display, subscription and deletion verified |
 | 9–11 | MPTCP / RIC-assisted control / AI steering | Future work |
 
@@ -276,7 +276,7 @@ A later installed-monitor run verified the repaired timestamp display with actua
 
 `ocudu_performance` was applied with Y/Y/Y: 20 CPU governors set to performance, DRM KMS polling disabled, four network-buffer settings set to 33554432. CU/DU run with sudo in the reproduction procedure. A sampled post-tuning check saw underflow 0, late 1. The script's network-buffer settings target Ethernet USRPs; the B210 improvement was not isolated to that setting.
 
-Kernel replacement, PREEMPT_RT, boot parameters, CPU isolation, IRQ pinning and hugepage changes were not part of this repair. Earlier privilege warnings alone were non-blocking; recurring RF realtime failures required host tuning. Check runtime settings after reboot and monitor sustained error growth.
+Kernel replacement, PREEMPT_RT, boot parameters, CPU isolation, IRQ pinning and hugepage changes were not part of this repair. Earlier privilege warnings alone were non-blocking; recurring RF real-time failures required host tuning. Check runtime settings after reboot and monitor sustained error growth.
 
 Next dual-link sequence: add/verify both matching Open5GS records (SST 1, `internet`, IPv4 type 1 and checked SQN representation) → prepare distinct DU/cell/radio identities and CU + DU1 + DU2 → confirm each modem's intended cell and registration → independent PDU sessions, WWAN interfaces and IP paths → MPTCP → extend verified DU1 FlexRIC collection to per-DU/per-UE telemetry → AI predictor/steering → blockage/QoE experiments.
 

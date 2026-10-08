@@ -6,7 +6,7 @@ The 2026-10-05 session verified single-UE registration, IPv4 connectivity, and a
 
 ## 0 Select the SIM and subscriber plan
 
-Open Cells SIM provisioning, Milenage authentication, and Quectel USIM-readiness checks are complete for both cards. The new IMSIs have **not yet registered against the RAN/Open5GS**. The earlier single-link baseline used IMSI `001010000000001`; its traffic/KPM evidence does not establish registration of the new cards.
+Open Cells SIM provisioning, Milenage authentication, and Quectel USIM-readiness checks are complete for both cards. The new IMSIs have **not yet registered with the RAN/Open5GS**. The earlier single-link baseline used IMSI `001010000000001`; its traffic/KPM evidence does not establish registration of the new cards.
 
 | Intended UE / DU | Card | IMSI | Observed modem IMEI |
 | --- | --- | --- | --- |

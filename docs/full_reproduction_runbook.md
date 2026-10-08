@@ -1,6 +1,6 @@
 # Full Reproduction Runbook: Single-Link 5G SA
 
-Last updated: 2026-10-07. The 2026-10-05 session verified initial UE traffic; the 2026-10-07 session verified FlexRIC E2 Setup, actual UE KPM reception and subscription/deletion. Synchronized traffic characterization remains to be done. This manual starts an installed Spark testbed and configures a new Ubuntu laptop. Software installation and builds are in [Installation](software_installation_and_drivers.md); daily commands with compact confirmations are in the [Spark](spark_quick_commands.md) and [UE laptop](ue_laptop_quick_commands.md) booklets.
+Last updated: 2026-10-07. The 2026-10-05 session verified initial UE traffic; the 2026-10-07 session verified FlexRIC E2 Setup, actual UE KPM reception and subscription/deletion. Synchronized traffic characterization remains to be done. This manual explains how to start an installed Spark testbed and configure a new Ubuntu laptop. Software installation and builds are in [Installation](software_installation_and_drivers.md); daily commands with compact confirmations are in the [Spark](spark_quick_commands.md) and [UE laptop](ue_laptop_quick_commands.md) booklets.
 
 **Startup:** physical connections → USB 3 verification → host performance → clean SA service selection → MongoDB → subscriber/IPv4/NRF checks → required 5GC → `ogstun` → CU → FlexRIC → DU with E2 overlay → xApp subscription check → laptop setup → NR/SA cell lock → registration → IPv4 PDU session → active bearer → WWAN configuration → ping → traffic with KPM reception check.
 
@@ -129,7 +129,7 @@ db.getSiblingDB("open5gs").subscribers.updateOne(
 '
 ```
 
-Re-run the projection and require type 1. No matched slice/session means the intended entry has not been repaired. The session recorded on 2026-10-05 occupied `slice.0.session.0`; named array filters avoid assuming that index on a later database.
+Rerun the projection and require type 1. No matched slice/session means the intended entry has not been repaired. The session recorded on 2026-10-05 occupied `slice.0.session.0`; named array filters avoid assuming that index on a later database.
 
 ### 5a Prepare the two provisioned Open Cells subscribers
 
@@ -724,7 +724,7 @@ fi
 
 Require a positive UE-report count, `report_age_us` and a gNB-DU UE ID together. `NO_UE` means subscription, deletion and exit succeeded but no UE report arrived in this run; confirm UE registration and traffic overlap rather than treating this as a timestamp-repair failure. A repaired live run passed with UE ID `2`, 12 report-age values of **499–717 microseconds** and normal subscription deletion/exit. This verifies the display, not precise clock/delay accuracy. See [Spark step 7a](spark_quick_commands.md#7a-verify-reports-after-the-timestamp-repair) for the two-host sequence and [step 7](spark_quick_commands.md#7-validate-ue-traffic-and-kpm-reports) for the five-metric log summary.
 
-Require actual `UE ID type = gNB-DU` reports with measurement names and values such as `DRB.UEThpUl` and `RRU.PrbTotUl`. Record the current UE ID, direction, application rate and report cadence. Throughput is in kbps, PRB usage in percent, and `DRB.RlcSduDelayDl` in 0.1 ms units. Earlier UE `14` selected samples were UL 14163–14675 kbps, UL PRB 86% and RLC DL delay 1.580–1.730 ms after conversion. Later UE `2` selected samples were UL 11916–11927 kbps, UL PRB 88% and RLC DL delay 1.380–1.440 ms. The [timestamp repair](troubleshooting/2026-10-07_flexric_latency_fix.md) is installed and its live display is verified; signed `report_age_us` includes processing and queueing time.
+Require actual `UE ID type = gNB-DU` reports with measurement names and values such as `DRB.UEThpUl` and `RRU.PrbTotUl`. Record the current UE ID, direction, application rate and report cadence. Throughput is in kbps, PRB usage in percent, and `DRB.RlcSduDelayDl` in 0.1 ms units. Earlier UE `14` selected samples were UL 14163–14675 kbps, UL PRB 86% and RLC DL delay 1.580–1.730 ms after conversion. Later UE `2` selected samples were UL 11916–11927 kbps, UL PRB 88% and RLC DL delay 1.380–1.440 ms. The [timestamp repair](troubleshooting/2026-10-07_flexric_latency_fix.md) is installed and its live display is verified; signed `report_age_us` includes processing and queuing time.
 
 ## 15. Video experiment (procedure; not yet verified)
 

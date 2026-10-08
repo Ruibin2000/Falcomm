@@ -13,7 +13,7 @@ flowchart TD
     Scan -->|Yes| PRACH{DU detects PRACH?}
     PRACH -->|No| UL[Investigate uplink access and RF path]
     PRACH -->|Yes| CRC{PUSCH CRC OK?}
-    CRC -->|No| Quality[Investigate uplink quality and realtime failures]
+    CRC -->|No| Quality[Investigate uplink quality and real-time failures]
     CRC -->|Yes| Core[Inspect CU RRC / NGAP and AMF NAS logs]
     Core --> NRF[Reject 95 with NF discovery 500 / HTTP 400: NRF PLMN]
     Core --> DB[Reject 7 with UDR 404 / missing SUPI: subscriber]
@@ -38,7 +38,7 @@ Reject numbers and CallFailed are clues, not universal root-cause mappings. Conf
 | QMI CallFailed after registration, SMF IP allocation and CU `Unsupported ... ipv4v6` | Subscriber type 3 caused a rejected dual-stack PDU request | Use session type 1 and `ip-type=ipv4` |
 | Automatic `ims` DNN warning | Unsubscribed optional IMS request | Track the `internet` PDU result separately; IMS not required |
 | Bearer connected, WWAN down/no IP | Static host settings not applied | Apply the actual bearer IPv4/prefix/MTU and private host route |
-| Recurring RF underflow/late | Host realtime performance | Recorded OCUDU performance script plus privileged RAN launch; monitor error growth |
+| Recurring RF underflow/late | Host real-time performance | Recorded OCUDU performance script plus privileged RAN launch; monitor error growth |
 | `--list-bearers`: no actions specified | CLI version does not support that form | Inspect modem bearer paths and query `mmcli -b` |
 | Repeated USB disconnect | Cable/power/port/autosuspend/modem state not isolated | Rediscover ports; investigate repeated events before deeper protocol changes |
 | IP assigned but ping/iperf fails | Host path / service / filter / possible transport failure | Check local route, WWAN/ogstun, firewall, service binding and F1-U/N3 |
@@ -149,9 +149,9 @@ This limitation is scoped to the recorded OCUDU build. The inspected source `/ho
 
 The modem's automatic `ims` request also produced an unsupported/unsubscribed DNN warning. It was not the cause of the `internet` bearer failure, and IMS was outside the experiment.
 
-### 11. Independent host realtime failures
+### 11. Independent host real-time failures
 
-The DU separately produced recurring RF underflow and late failures. Running `sudo ./scripts/ocudu_performance`, answering Y/Y/Y, and launching DU with sudo yielded 20 performance governors, disabled DRM KMS polling and network buffers 33554432. A later sampled check recorded underflow 0 / late 1. The changes improved the sampled behavior; long-duration realtime stability and each setting's individual effect remain unmeasured. Network-buffer tuning in that script targets Ethernet radios, while B210 uses USB.
+The DU separately produced recurring RF underflow and late failures. Running `sudo ./scripts/ocudu_performance`, answering Y/Y/Y, and launching DU with sudo yielded 20 performance governors, disabled DRM KMS polling and network buffers 33554432. A later sampled check recorded underflow 0 / late 1. The changes improved the sampled behavior; long-duration real-time stability and each setting's individual effect remain unmeasured. Network-buffer tuning in that script targets Ethernet radios, while B210 uses USB.
 
 ### 12. Connected IPv4 bearer and manual host setup
 
@@ -177,7 +177,7 @@ Stopping the SA services alone left BSF, SEPP, EPC services and WebUI running. F
 
 ## Conclusions preserved for future debugging
 
-Confirmed issues: NRF PLMN mismatch; missing subscriber; unstable private-SA selection; rejected IPv4v6 session; host realtime failures; unapplied static WWAN settings. RX gain 40 insufficiency, inability to receive n78, invalid SSB, missing `internet` DNN, UPF allocation failure, broken basic F1-C and the IMS warning were ruled out as the primary causes by the later evidence.
+Confirmed issues: NRF PLMN mismatch; missing subscriber; unstable private-SA selection; rejected IPv4v6 session; host real-time failures; unapplied static WWAN settings. RX gain 40 insufficiency, inability to receive n78, invalid SSB, missing `internet` DNN, UPF allocation failure, broken basic F1-C and the IMS warning were ruled out as the primary causes by the later evidence.
 
 The local CU file currently includes an explicit `cu_up.ngu` bind at `127.0.0.1`, whereas the supplied successful configuration excerpt omitted it. Both describe the observed N3 socket. Its necessity was not established by an isolated comparison; do not label adding `ngu` as a confirmed root-cause fix. The inspected DU also omits the old explicit `otw_format: sc12`; do not silently restore old RF settings.
 

@@ -17,7 +17,7 @@ The reusable [patch](../../patches/flexric/73650812-kpm-timestamp.patch) changes
 
 ## Meaning of `report_age_us`
 
-The display is the xApp callback's Unix time minus the decoded header time. It includes processing and queueing across DU, E2, RIC and E42, plus any difference between sender and receiver clocks. A negative value can still occur with clock offset or clock adjustments; it must remain signed.
+The display is the xApp callback's Unix time minus the decoded header time. It includes processing and queuing across DU, E2, RIC and E42, plus any difference between sender and receiver clocks. A negative value can still occur with clock offset or clock adjustments; it must remain signed.
 
 In current OCUDU, `e2_indication_procedure.cpp` calls `get_indication_message()` before `get_indication_header()`. Packing the message clears measurements, and the Format 4 clear function updates `collet_start_time` before the header is packed. The transmitted timestamp therefore nearly marks report generation, despite the field's collection-start name. The difference is neither pure transport latency nor the full configured 1000 ms collection period.
 

@@ -59,7 +59,7 @@ Private QSCAN and PUSCH CRC OK at 20–33 dB SINR established usable downlink ac
 10. Record tests by direction, duration, rate, retransmission/jitter/loss and concurrent RF-error growth. Do not present first TCP success as sustained performance.
 11. Stop traffic and let the xApp delete its subscription, then release PDU/laptop configuration, stop DU, FlexRIC, CU and core. Keep MongoDB data; optional/legacy services need explicit cleanup for full shutdown.
 12. Documentation maintenance does not authorize starting services, RF, benchmarking, committing or pushing. The operator requested no automatic push/merge for this update.
-13. Write all documentation in English, including comments and operator prompts in documented commands.
+13. Write all documentation in US English, including comments and operator prompts in documented commands.
 
 ## Next session
 

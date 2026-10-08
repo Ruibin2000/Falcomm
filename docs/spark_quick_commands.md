@@ -10,7 +10,7 @@ Run checks in a diagnostics terminal. CU, FlexRIC, DU, and iperf each need their
 
 ## 0 Check the SIM and subscriber plan
 
-The new Open Cells cards OC011830 / IMSI `001010000000101` and OC011831 / IMSI `001010000000102` are provisioned, Milenage-authenticated, and verified as ready in Quectel modems. They have **not yet registered against the RAN/Open5GS**. The earlier baseline IMSI `001010000000001` and its single-DU/KPM results remain separate.
+The new Open Cells cards OC011830 / IMSI `001010000000101` and OC011831 / IMSI `001010000000102` are provisioned, Milenage-authenticated, and verified as ready in Quectel modems. They have **not yet registered with the RAN/Open5GS**. The earlier baseline IMSI `001010000000001` and its single-DU/KPM results remain separate.
 
 Before using either new card, prepare its own matching core subscriber from protected `~/sim_du1_credentials.txt` or `~/sim_du2_credentials.txt`, SST 1, `internet`, and IPv4 type 1. Keep K/OPc private. The programming tool's recommended SQN reference `96` requires verification of the installed core's representation/current state; do not blindly insert or reset decimal 96. See [SIM assignments](sim_provisioning_and_dual_ue.md#sim-assignments) and [Open5GS preparation](sim_provisioning_and_dual_ue.md#prepare-open5gs-subscribers).
 
@@ -256,7 +256,7 @@ fi
 
 A positive `UE reports` count confirms UE reports arrived in this run. `NO_UE` means subscription, deletion, and exit succeeded but no UE report arrived; check UE registration and traffic overlap. It does not establish a timestamp-repair failure. The printed path contains the full log; use step 7 in the same terminal to inspect the five measurements.
 
-`report_age_us` is in microseconds and includes report processing, queueing, and forwarding time. It is not pure network delay or application RTT. A 30-second application uplink/downlink benchmark, report-period accuracy, and sustained stability remain to be verified. For the cause and accuracy limits, see the [Timestamp Repair Record](troubleshooting/2026-10-07_flexric_latency_fix.md).
+`report_age_us` is in microseconds and includes report processing, queuing, and forwarding time. It is not pure network delay or application RTT. A 30-second application uplink/downlink benchmark, report-period accuracy, and sustained stability remain to be verified. For the cause and accuracy limits, see the [Timestamp Repair Record](troubleshooting/2026-10-07_flexric_latency_fix.md).
 
 If the repair needs reinstalling later, run the following in a Spark terminal and enter the sudo password. The script backs up and atomically replaces the KPM library and two C monitors:
 
